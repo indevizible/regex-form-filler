@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Synthetic file upload fixture</title><link rel="stylesheet" href="fixture.css"></head>
+<body>
+  <header><div class="eyebrow">TEST ONLY · NO EXTERNAL UPLOAD</div><h1>Saved file → picker → attachment</h1><p>Shipping formDOM, matcher and IndexedDB storage. Synthetic Google Forms shapes only; this does not prove live Google compatibility.</p></header>
+  <aside>
+    <label for="local-file">1. Choose bundled TEST-ONLY.pdf (nothing is preloaded)</label><input id="local-file" type="file" accept="application/pdf,.pdf">
+    <p>Or create synthetic PDF-named test bytes below. This does not test the native chooser or read any disk file.</p>
+    <button id="create-synthetic" type="button">Create synthetic TEST-ONLY.pdf draft</button>
+    <p id="file-info">No file chosen</p><button id="save-file" type="button" disabled>Save fixture copy</button>
+    <button id="save-pair" type="button">Save two distinct synthetic files</button>
+    <p id="storage-status" role="status"></p>
+    <label for="scenario">2. Scenario (resets page, keeps saved file)</label>
+    <select id="scenario">
+      <option value="success">Success: whole-form ARIA mask + async attachment + auto close</option>
+      <option value="two-files">Success: two consecutive masked file uploads</option>
+      <option value="inner-progress-two">Two files: sibling upload-progress dialog masks original inner picker</option>
+      <option value="sequence-name-first">Two files: remove input, filename → close → async ARIA restore</option>
+      <option value="sequence-close-first">Two files: remove input, close → filename → async ARIA restore</option>
+      <option value="sequence-preserved">Preserve first attachment; complete only second with input removal + async ARIA restore</option>
+      <option value="hide-first">Success: hide picker, then update outer list</option>
+      <option value="name-first">Success: show filename, then hide picker</option>
+      <option value="name-open">Exact filename with picker still open (must wait)</option>
+      <option value="confirm">Success: selected filename + Insert 1 item</option>
+      <option value="wrong">Wrong filename (must block Next)</option>
+      <option value="reject">Reject PDF through accept=image/png</option>
+      <option value="prefilled">Preserve existing attachment</option>
+      <option value="pending">Pending until explicit completion / cancel</option>
+      <option value="unknown">Unknown picker path (must block Next)</option>
+    </select>
+    <p>Every picker masks the original form wrapper with aria-hidden=true. The sequence scenarios remove the input after change and restore ARIA one second after close. Save the distinct synthetic pair first; one Fill should attach both, and keyboard-style fill should then attempt Next once. Original question nodes stay connected.</p>
+    <p>inner-progress-two reproduces the observed Google lifecycle: a new sibling dialog masks the original inner wrapper for 700ms, then disappears before the picker closes and the exact attachment arrives. The iframe, document and input remain retained. Use Save two distinct synthetic files; no disk file is needed.</p>
+    <div class="buttons"><button id="dry" type="button">Dry run</button><button id="fill-file" type="button">Fill only</button><button id="keyboard" type="button">Keyboard-style fill + Next</button></div>
+    <p>The keyboard-style button requests Next with allowIncomplete=true to prove upload uncertainty still blocks it. It is not a real extension shortcut.</p>
+    <div class="buttons"><button id="complete" type="button" disabled>Complete pending upload</button><button id="cancel-picker" type="button" disabled>Cancel picker</button><button id="reset-page" type="button">Reset page</button><button id="delete-copy" type="button">Delete fixture copy</button></div>
+    <p id="status" role="status">Not run</p><pre id="counters"></pre><pre id="report"></pre><ul id="assertions"></ul>
+    <details open><summary>Synthetic picker diagnostics (read-only)</summary><pre id="picker-diagnostics" style="font-size:11px;overflow-wrap:anywhere">Not sampled</pre></details>
+  </aside>
+  <main><div id="stage"></div></main>
+  <template id="questions">
+    <div id="form-background" class="Uc2NEf">
+    <form id="mG61Hd">
+      <div role="list">
+        <div role="listitem" class="card"><div role="heading" aria-level="2">Static section</div><p>This card is not a question.</p></div>
+        <div role="listitem" class="card">
+          <div id="i1" role="heading" aria-level="3">Upload</div><p id="i4">Upload 1 supported file. Max 10 MB.</p>
+          <div id="selected-files" role="list" aria-label="Selected files"></div>
+          <div id="add-file" role="button" aria-label="Add file" aria-labelledby="i1 i4" tabindex="0">Add file</div>
+        </div>
+        <div id="second-question" role="listitem" class="card" hidden>
+          <div id="i2" role="heading" aria-level="3">Upload 2</div><p id="i5">Second consecutive file question.</p>
+          <div id="selected-second" role="list" aria-label="Selected files"></div>
+          <div id="add-second" role="button" aria-label="Add file" aria-labelledby="i2 i5" tabindex="0">Add file</div>
+        </div>
+      </div>
+      <div role="button" id="next" tabindex="0">Next</div><button id="submit" type="submit">Submit</button>
+    </form>
+    </div>
+  </template>
+  <script type="module" src="file-fixture.js"></script>
+</body></html>

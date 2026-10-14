@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Regex Form Filler",
+  "version": "1.5.6",
+  "description": "กรอก Google Forms ด้วย regex จากชื่อคำถาม โดยไม่กดส่งแบบฟอร์ม",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Regex Form Filler",
+    "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png" }
+  },
+  "commands": {
+    "fill-form": {
+      "suggested_key": { "default": "Alt+Shift+F", "mac": "Option+Shift+F" },
+      "description": "กรอก Google Forms ด้วยกฎที่บันทึกไว้"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; worker-src 'self'; connect-src 'none'; base-uri 'none'"
+  }
+}

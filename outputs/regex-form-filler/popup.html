@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Regex Form Filler</title><link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header><div class="eyebrow">GOOGLE FORMS · SAVED LOCALLY</div><h1>Regex Form Filler</h1><p id="extension-version" class="hint"></p><p>เลือกชื่อคำถาม ใส่คำตอบ แล้วบันทึกกฎ</p></header>
+    <section class="run-panel" aria-labelledby="run-title">
+      <h2 id="run-title">ใช้กับหน้าปัจจุบันของฟอร์ม</h2>
+      <div class="button-row"><button id="inspect" disabled>อ่านคำถามจากฟอร์ม</button><button id="fill" class="primary" disabled>กรอกหน้านี้</button></div>
+      <div class="shortcut"><span>คีย์ลัดที่ใช้งานจริง</span><strong id="shortcut">กำลังอ่าน…</strong></div>
+      <p id="shortcut-warning" class="warning" hidden>ยังไม่ได้กำหนดคีย์ลัด เปิด Extensions → Keyboard shortcuts แล้วกำหนดให้ Regex Form Filler</p>
+      <p class="hint">อ่านและตรวจการจับคู่เฉพาะหน้านี้ · กรอกด้วยกฎที่บันทึก · ไม่เขียนทับคำตอบเดิม · ปุ่มใน popup ไม่กด Next · ไม่กด Submit / ส่ง</p>
+      <fieldset class="shortcut-options" aria-describedby="shortcut-help">
+        <legend>Next เฉพาะคีย์ลัดกรอกฟอร์ม</legend>
+        <label><input id="auto-next" type="checkbox" disabled> กด Next อัตโนมัติเมื่อกรอกครบ</label>
+        <label><input id="allow-incomplete" type="checkbox" disabled> อนุญาต Next แม้ยังกรอกไม่ครบ</label>
+        <p id="shortcut-help" class="hint">คีย์ลัดแต่ละครั้งลองกด Next / ถัดไปได้ 1 ครั้ง เฉพาะหน้านี้ ไม่กรอกหน้าถัดไปและไม่กด Submit / ส่ง · นับทุกคำถามที่มองเห็น รวมข้อไม่บังคับและคำตอบเดิม/กรอกเอง · ช่องที่ตรวจไม่ได้ถือว่ายังไม่ครบ · แม้อนุญาตข้อไม่ครบ ฟอร์มและเบราว์เซอร์ยังตรวจคำตอบที่บังคับตามปกติ</p>
+        <p id="shortcut-status" role="status" aria-live="polite"></p>
+      </fieldset>
+    </section>
+    <section aria-labelledby="rules-title">
+      <div class="section-title"><h2 id="rules-title">กฎของคุณ</h2><span id="saved-state" class="pill">กำลังโหลด</span></div>
+      <form id="rule-form">
+        <h3 id="builder-title">เพิ่มกฎ</h3>
+        <label for="question-select">เลือกคำถามจากหน้าปัจจุบัน</label>
+        <select id="question-select" aria-describedby="question-help" disabled><option value="">กด “อ่านคำถามจากฟอร์ม” ก่อน</option></select>
+        <p id="question-help" class="hint">อ่านเฉพาะคำถามที่เห็นในหน้านี้ หากอ่านไม่ได้ ให้พิมพ์ชื่อด้านล่างได้เลย</p>
+        <label for="rule-mode">วิธีจับคู่ชื่อคำถาม</label>
+        <select id="rule-mode" disabled>
+          <option value="exact">ตรงกับชื่อคำถาม</option>
+          <option value="contains">มีคำนี้ในชื่อคำถาม</option>
+          <option value="regex">Regex (ขั้นสูง)</option>
+        </select>
+        <label id="source-label" for="rule-source">ชื่อคำถามหรือคำที่ต้องการจับคู่</label>
+        <textarea id="rule-source" rows="2" autocomplete="off" spellcheck="false" aria-describedby="source-help" disabled></textarea>
+        <p id="source-help" class="hint"></p>
+        <div id="flags-field" hidden><label for="rule-flags">Regex flags</label><input id="rule-flags" type="text" value="iu" autocomplete="off" spellcheck="false" aria-describedby="flags-help" disabled><p id="flags-help" class="hint">ใช้ i m s u อย่างละไม่เกินหนึ่งครั้ง หรือเว้นว่าง</p></div>
+        <label for="answer-type">รูปแบบคำตอบ</label>
+        <select id="answer-type" disabled><option value="single">คำตอบเดียว</option><option value="multiple">หลายตัวเลือก (บรรทัดละข้อ)</option><option value="date">วันเกิด / วันที่</option><option value="file">ไฟล์จากเครื่อง</option></select>
+        <div id="file-fields" hidden>
+          <label for="rule-file">เลือกไฟล์หนึ่งไฟล์ / เลือกใหม่เพื่อแทนสำเนา</label>
+          <input id="rule-file" type="file" aria-describedby="file-help file-summary file-status" disabled>
+          <p id="file-summary" class="hint"></p><p id="file-status" class="hint" role="status" aria-live="polite"></p>
+          <p id="file-help" class="hint">หนึ่งไฟล์ต่อกฎ สูงสุด 10 MiB · รวมไฟล์ไม่ซ้ำไม่เกิน 20 MiB ต่อครั้ง · บันทึกกฎจะเก็บสำเนาไว้ในส่วนขยาย การแก้ไฟล์ต้นฉบับไม่เปลี่ยนสำเนา ต้องเลือกใหม่ · ปุ่มกรอกและคีย์ลัดจะอัปโหลดสำเนานี้ไปยัง Google Forms ที่ตรงกฎ · JSON ส่งออกมีแค่ข้อมูลอ้างอิงไฟล์ ไม่มีเนื้อไฟล์ จึงใช้ข้ามโปรไฟล์ไม่ได้โดยไม่เลือกไฟล์ใหม่</p>
+        </div>
+        <div id="answer-field">
+          <label for="rule-answer">คำตอบที่ต้องการกรอก</label>
+          <textarea id="rule-answer" aria-describedby="answer-help" disabled></textarea>
+          <p id="answer-help" class="hint"></p>
+        </div>
+        <div id="date-fields" hidden>
+          <div class="date-row">
+            <div><label for="rule-date">วัน/เดือน/ปี (DD/MM/YYYY)</label><input id="rule-date" type="text" placeholder="29/02/2543" autocomplete="off" aria-describedby="date-help date-preview" disabled></div>
+            <div><label for="date-input-calendar">ปีที่ป้อน</label><select id="date-input-calendar" disabled><option value="buddhist">พ.ศ.</option><option value="gregorian">ค.ศ.</option></select></div>
+            <div><label for="date-text-calendar">ปีสำหรับช่องข้อความ</label><select id="date-text-calendar" disabled><option value="buddhist">พ.ศ.</option><option value="gregorian">ค.ศ.</option></select></div>
+          </div>
+          <label for="date-text-format">รูปแบบวันที่ในช่องข้อความ</label>
+          <select id="date-text-format" aria-describedby="date-help date-preview" disabled>
+            <option value="numeric">ตัวเลข · 18/04/2533</option>
+            <option value="thai-long">เดือนภาษาไทยเต็ม · 18 เมษายน 2533</option>
+            <option value="thai-short">เดือนภาษาไทยย่อ · 18 เม.ย. 2533</option>
+          </select>
+          <p id="date-help" class="hint">ป้อนวัน/เดือน 1–2 หลัก ปี 4 หลัก ด้วยเลข 0–9 · ช่องวันที่ใช้ ค.ศ. เสมอ · รูปแบบข้อความและปีเลือกแยกกันได้</p>
+          <p id="date-preview" class="hint" role="status" aria-live="polite"></p>
+        </div>
+        <div class="button-row"><button id="rule-save" type="submit" class="primary" disabled>เพิ่มและบันทึกกฎ</button><button id="rule-cancel" type="button" disabled>ยกเลิกร่าง</button></div>
+      </form>
+      <p id="draft-help" class="hint" role="status"></p>
+      <p id="message" role="status" aria-live="polite"></p>
+      <h3>กฎที่บันทึกแล้ว</h3>
+      <p id="empty-rules" class="hint" hidden>ยังไม่มีกฎ เริ่มจากอ่านคำถามหรือพิมพ์ชื่อ ใส่คำตอบ แล้วกด “เพิ่มและบันทึกกฎ”</p>
+      <ol id="rule-list"></ol>
+    </section>
+    <details id="advanced"><summary>ขั้นสูง: JSON / นำเข้า–ส่งออก</summary>
+      <label for="rules">JSON array · pattern, flags, value</label>
+      <textarea id="rules" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="rules-help" disabled></textarea>
+      <p id="rules-help" class="hint">ใช้ regex โดยไม่ใส่ / ครอบ · flags เริ่มต้น iu · checkbox ใช้ ["ตัวเลือก A", "ตัวเลือก B"] · วันที่ใช้ {"type":"date","iso":"2000-02-29","textCalendar":"buddhist","textFormat":"thai-long"} · textCalendar: buddhist หรือ gregorian · textFormat: numeric, thai-long, thai-short (ละได้ ใช้ numeric) · บันทึกหรือนำเข้าจะแทนกฎทั้งชุด</p>
+      <div class="button-row"><button id="save" class="primary" disabled>บันทึก JSON</button><button id="import-text" disabled>นำเข้า JSON ในช่อง</button><button id="json-cancel" disabled>ยกเลิกแก้ JSON</button></div>
+      <div class="button-row secondary-row"><button id="import-file" disabled>นำเข้าไฟล์ JSON</button><button id="export" disabled>ส่งออกกฎที่บันทึก</button><input id="file" type="file" accept=".json,application/json" hidden></div>
+    </details>
+    <section aria-labelledby="results-title"><div class="section-title"><h2 id="results-title">ผลล่าสุดของแท็บนี้</h2><span id="run-time" class="hint"></span></div><p id="summary" role="status">ยังไม่มีผลการทำงาน</p><p id="navigation-result" role="status" aria-live="polite"></p><ol id="results"></ol></section>
+    <details><summary>ตัวอย่างและข้อควรรู้</summary>
+      <p>“ตรงกับชื่อคำถาม” เหมาะกับคำถามที่ต้องแยกกัน เช่น เบอร์โทรศัพท์ กับเบอร์โทรศัพท์บุคคลที่ติดต่อได้ในกรณีฉุกเฉิน · “มีคำนี้” อาจตรงหลายคำถาม</p>
+      <p>ชื่อคำถามจะตัดเลขนำหน้า เช่น 9. หรือ ๙) และเครื่องหมาย * ท้ายชื่อ แล้วรวมช่องว่างก่อนจับคู่ หากตรงหลายกฎจะข้ามข้อนั้น</p>
+      <p>เลือก “วันเกิด / วันที่” เพื่อใช้กฎเดียวกับช่องวันที่ (ค.ศ. YYYY-MM-DD) และช่องข้อความ (ตัวเลข DD/MM/YYYY, เดือนภาษาไทยเต็ม หรือย่อ ตามปีที่เลือก) · กฎข้อความเดิมยังใช้ตามตัวอักษร ต้องเปลี่ยนโหมดเอง · ช่วงปี ค.ศ. 0001–9456 / พ.ศ. 0544–9999</p>
+      <p>ไฟล์จากเครื่องใช้เฉพาะ Google Forms ที่มี Add file / เพิ่มไฟล์ และ picker ที่รองรับ หากยืนยันไฟล์แนบไม่ได้ให้ทำเอง · ตารางและคำถามหลายช่องให้กรอกเอง · ตัวเลือกต้องตรงข้อความทุกตัวหลังรวมช่องว่าง</p>
+      <p>งานไฟล์อาจรอถึง 60 วินาทีต่อไฟล์ / 180 วินาทีต่อครั้ง ปิด popup ได้ งานยังทำต่อ · ระหว่างอัปโหลดหรือยืนยันไม่ได้ จะไม่กด Next แม้เปิดตัวเลือกข้ามข้อไม่ครบ</p>
+      <p>ข้อมูลบันทึกในเบราว์เซอร์แบบไม่เข้ารหัส ไฟล์ส่งออกมีคำตอบ โปรดเก็บอย่างเหมาะสม · ปิด popup แล้วร่างที่ยังไม่บันทึกจะหาย</p>
+      <p>ขณะตรวจจะมีแท็บส่วนขยายเปิดในพื้นหลังและปิดเอง เพื่อให้หยุด regex ที่ใช้เวลานานได้</p>
+    </details>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

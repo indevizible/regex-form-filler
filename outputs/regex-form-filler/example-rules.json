@@ -1,0 +1,15 @@
+[
+  { "pattern": "^คำนำหน้าชื่อ$", "flags": "iu", "value": "นาย" },
+  { "pattern": "^ชื่อจริง$", "flags": "iu", "value": "ทดสอบ" },
+  { "pattern": "^นามสกุล$", "flags": "iu", "value": "ระบบ" },
+  { "pattern": "^วัน เดือน ปี เกิด$", "flags": "iu", "value": { "type": "date", "iso": "2000-02-29", "textCalendar": "buddhist" } },
+  { "pattern": "^วันที่ทดสอบ เดือนเต็ม$", "flags": "iu", "value": { "type": "date", "iso": "2000-02-29", "textCalendar": "buddhist", "textFormat": "thai-long" } },
+  { "pattern": "^วันที่ทดสอบ เดือนย่อ$", "flags": "iu", "value": { "type": "date", "iso": "2000-02-29", "textCalendar": "buddhist", "textFormat": "thai-short" } },
+  { "pattern": "^อายุ \\(ปีบริบูรณ์\\)$", "flags": "iu", "value": "26" },
+  { "pattern": "^สัญชาติ$", "flags": "iu", "value": "ไทย" },
+  { "pattern": "^โรคประจำตัว(?:\\s*\\([^\\r\\n]*\\))?$", "flags": "iu", "value": "ตัวอย่างสมมติสำหรับทดสอบ" },
+  { "pattern": "^(?!.*ฉุกเฉิน).*เบอร์โทรศัพท์.*$", "flags": "iu", "value": "0000000000" },
+  { "pattern": "^E-mail$", "flags": "iu", "value": "regex-test@example.com" },
+  { "pattern": "^.*เบอร์โทรศัพท์.*ฉุกเฉิน.*$", "flags": "iu", "value": "0000000001" },
+  { "pattern": "^กิจกรรมทดสอบ$", "flags": "iu", "value": ["อ่าน", "เดิน"] }
+]

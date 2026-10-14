@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="th">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Regex Form Filler · Synthetic fixture</title><link rel="stylesheet" href="fixture.css"></head>
+<body>
+  <header><p class="eyebrow">DEVELOPER FIXTURE · SYNTHETIC DATA ONLY</p><h1>Regex Form Filler — แบบทดสอบ</h1><p>ปุ่มด้านล่างเรียก formDOM และ Worker ที่ส่งมอบจริง หน้านี้ไม่ได้ผ่านข้อยกเว้น URL ในส่วนขยาย</p></header>
+  <aside>
+    <div class="buttons"><button id="inspect">1. ตรวจอย่างเดียว</button><button id="fill">2. กรอกด้วยกฎทดสอบ</button><button id="assert">3. ตรวจผลที่คาดหวัง</button><button id="reset">เริ่มใหม่</button></div>
+    <p id="status" role="status">พร้อมทดสอบ · ไม่มีข้อมูลส่วนบุคคล</p>
+    <p>Next clicks: <b id="next-count">0</b> · Submit events: <b id="submit-count">0</b> · Input events: <b id="input-count">0</b> · Change events: <b id="change-count">0</b></p>
+    <pre id="assertions"></pre><ol id="results"></ol>
+  </aside>
+  <main><form id="form" novalidate>
+    <div role="listitem" class="card"><div role="heading" aria-level="2">หัวข้อส่วน — ไม่ใช่คำถาม</div><p>คำอธิบายที่มีคำว่า ชื่อจริง เบอร์โทรศัพท์ และ E-mail ต้องไม่ถูกใช้จับคู่</p></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q1"><span>1. คำนำหน้าชื่อ</span><span aria-label="Required question"> *</span></div><div role="radiogroup" aria-labelledby="q1"><div role="radio" aria-label="นาย" data-value="นาย" aria-checked="false" tabindex="0">นาย</div><div role="radio" aria-label="นางสาว" data-value="นางสาว" aria-checked="false" tabindex="0">นางสาว</div></div></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q2">2. ชื่อจริง *</div><p>คำอธิบาย: เบอร์โทรศัพท์ฉุกเฉิน</p><input id="first" type="text" aria-labelledby="q2" required></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q3">3. นามสกุล</div><input id="prefilled" type="text" aria-labelledby="q3" value="ค่าเดิมทดสอบ"></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q4">4. วัน เดือน ปี เกิด</div><div id="date-label">Date</div><input id="date" type="date" max="2076-01-01" aria-labelledby="date-label"></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q5">5. อายุ (ปีบริบูรณ์)</div><input id="age" type="number" min="1" max="120" aria-labelledby="q5"></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q6">6. สัญชาติ</div><select id="nationality" aria-labelledby="q6"><option value="">เลือก</option value="TH">ไทย</option value="TEST">ประเทศสมมติ</option disabled value="DISABLED">ปิดใช้งาน</option></select></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q7">7. กิจกรรมทดสอบ</div><div role="checkbox" aria-label="อ่าน" aria-checked="false" tabindex="0">อ่าน</div><div role="checkbox" aria-label="เดิน" aria-checked="false" tabindex="0">เดิน</div><div role="checkbox" aria-label="วาด" aria-checked="false" tabindex="0">วาด</div></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q8">8. Dropdown ทดสอบ</div><div id="dropdown" role="listbox" aria-labelledby="q8" data-value="" aria-expanded="false" tabindex="0"><span id="dropdown-value">เลือก</span><div role="option" data-value="" aria-selected="true" hidden>เลือก</div><div role="option" data-value="ตัวเลือก ก" aria-selected="false" hidden>ตัวเลือก ก</div><div role="option" data-value="ตัวเลือก ข" aria-selected="false" hidden>ตัวเลือก ข</div></div></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q9">๙) เบอร์โทรศัพท์ *</div><input id="phone" type="tel" aria-labelledby="q9"></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q10">10. E-mail</div><input id="email" type="email" aria-labelledby="q10"></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q11">11. เบอร์โทรศัพท์บุคคลที่ติดต่อได้ในกรณีฉุกเฉิน</div><input id="emergency" type="tel" aria-labelledby="q11"></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q12">12. ซ้ำหลายกฎ</div><input id="ambiguous" type="text" aria-labelledby="q12"></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q13">13. อัปโหลดไฟล์</div><input id="file" type="file" aria-labelledby="q13"></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q14">14. อ่านอย่างเดียว</div><input id="readonly" readonly aria-labelledby="q14"></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q15">15. ช่องซ่อน</div><input id="hidden-field" type="text" aria-labelledby="q15" hidden></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q16">16. ตัวเลขไม่ผ่าน</div><input id="invalid-number" type="number" min="1" max="10" aria-labelledby="q16"></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q17">17. หลายช่อง</div><input id="multi-a" aria-labelledby="q17"><input id="multi-b" aria-labelledby="q17"></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q18">18. ตาราง</div><div role="grid" aria-labelledby="q18"><div role="row"><div role="checkbox" aria-label="A" aria-checked="false">A</div></div></div></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q19">19. ไม่ยอมเปลี่ยนค่า</div><input id="reject-write" aria-labelledby="q19"></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q20">20. คำตอบยาว</div><textarea id="long-answer" aria-labelledby="q20"></textarea></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q21">21. ตัวเลือกหาย</div><div id="missing-choice" role="checkbox" aria-label="A" aria-checked="false" tabindex="0">A</div></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q22">22. เลือกไว้แล้ว</div><div id="preserved-choice" role="checkbox" aria-label="A" aria-checked="true" tabindex="0">A</div><div role="checkbox" aria-label="B" aria-checked="false" tabindex="0">B</div></div>
+    <div role="listitem" class="card"><div role="heading" aria-level="3" id="q23">23. ข้อตกลงที่ไม่มีกฎ</div><div id="agreement" role="checkbox" aria-label="ยอมรับ" aria-checked="false" tabindex="0">ยอมรับ</div></div>
+    <div class="buttons"><button type="button" id="next">Next — ไม่ควรถูกกด</button><button type="submit" id="submit">Submit — ไม่ควรถูกกด</button></div>
+  </form></main>
+  <script type="module" src="fixture.js"></script>
+</body>
+</html>

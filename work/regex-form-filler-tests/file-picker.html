@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Synthetic Insert file</title></head>
+<body style="font:15px/1.6 system-ui;padding:16px">
+  <div role="dialog" aria-label="Insert file">
+    <h2>Insert file · TEST ONLY</h2>
+    <div role="tablist"><button role="tab" aria-selected="true" type="button">Upload</button><button role="tab" aria-selected="false" type="button" disabled>My Drive</button><button role="tab" aria-selected="false" type="button" disabled>Recent</button></div>
+    <p>Browse or drag a file to upload to My Drive and select (synthetic; no network upload).</p>
+    <button id="browse" type="button">Browse</button><input id="upload" type="file" style="display:none" accept="application/pdf,image/bmp,image/gif,image/heic,image/heif,image/jpeg,image/png,image/tiff,image/vnd.microsoft.icon,image/webp,image/x-ms-bmp,application/vnd.google-apps.folder">
+    <p id="module-marker" role="status">Module not ready</p><p id="progress" role="status">Waiting for shipping formDOM</p><div id="selection"></div>
+    <button id="insert" type="button" hidden>Insert 1 item</button><button id="close" type="button" aria-label="Close picker Insert file">Close picker Insert file</button>
+  </div>
+  <!-- Deliberately deferred: the parsed input exists before this module binds its handlers. -->
+  <script type="module" src="/work/regex-form-filler-tests/file-picker.js"></script>
+</body></html>
