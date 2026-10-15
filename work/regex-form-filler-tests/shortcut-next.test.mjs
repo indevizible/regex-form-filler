@@ -28,7 +28,7 @@ test('shortcut-next: preview settings merge without erasing legacy rules; reset 
   const values = new Map([['regex-form-filler-synthetic-preview-v1.1', '[{"pattern":"x","value":"synthetic"}]'], ['unrelated', 'keep']]);
   let reset;
   const context = { localStorage: { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) },
-    location: { reload() {} }, document: { body: { prepend() {} }, createElement: () => ({ style: {}, append() {}, addEventListener: (_, fn) => { reset = fn; } }) } };
+    addEventListener() {}, location: { reload() {} }, document: { body: { prepend() {} }, createElement: () => ({ style: {}, append() {}, addEventListener: (_, fn) => { reset = fn; } }) } };
   runInNewContext(await readFile('work/regex-form-filler-tests/preview-chrome.js', 'utf8'), context);
   assert.equal(context.chrome.runtime.getManifest().version, JSON.parse(await readFile('outputs/regex-form-filler/manifest.json', 'utf8')).version);
   const before = (await context.chrome.storage.local.get()).rules;

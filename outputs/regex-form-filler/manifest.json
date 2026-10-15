@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Regex Form Filler",
-  "version": "1.5.6",
+  "version": "1.6.0",
   "description": "กรอก Google Forms ด้วย regex จากชื่อคำถาม โดยไม่กดส่งแบบฟอร์ม",
   "permissions": ["activeTab", "scripting", "storage"],
   "background": { "service_worker": "background.js", "type": "module" },

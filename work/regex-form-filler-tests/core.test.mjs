@@ -50,7 +50,7 @@ test('URL allowlist accepts response/preview paths and rejects edit/results/look
 });
 test('manifest has release icons, only the three required permissions and valid synthetic examples', async () => {
   const manifest = JSON.parse(await readFile(new URL('../../outputs/regex-form-filler/manifest.json', import.meta.url), 'utf8'));
-  assert.equal(manifest.version, '1.5.6');
+  assert.equal(manifest.version, '1.6.0');
   assert.deepEqual(Object.keys(manifest.icons), ['16', '32', '48', '128']);
   for (const [size, path] of Object.entries(manifest.icons)) {
     assert.equal(path, `icons/icon-${size}.png`);

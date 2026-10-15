@@ -1,4 +1,5 @@
 import { FILE_DIAGNOSTICS, formatDateAnswer, LIMITS, normalizeLabel, normalizeShortcutOptions, NAVIGATION_STATUS, parseDateAnswer, parseRules, STATUS, validateRules } from './core.js';
+import { activePreset, readPresetState, validatePresetName, validatePresetState } from './presets.js';
 import { ruleFromDraft, ruleToDraft } from './rule-editor.js';
 import { createFileReference, loadFile, saveRulesWithFiles } from './file-store.js';
 
@@ -8,6 +9,11 @@ const builderFields = ['rule-mode', 'rule-source', 'rule-flags', 'answer-type', 
 const matchNames = { exact: 'ตรงกับชื่อคำถาม', contains: 'มีคำนี้ในชื่อคำถาม', regex: 'Regex' };
 let savedText = '[]';
 let savedRules = [];
+let presetState;
+let pendingState;
+let pendingDeleteId = null;
+let migrated = false;
+let stale = false;
 let shortcutOptions = normalizeShortcutOptions();
 let loaded = false;
 let busy = false;
@@ -24,7 +30,7 @@ const readDraft = () => ({ mode: $('rule-mode').value, source: $('rule-source').
   date: $('rule-date').value, inputCalendar: $('date-input-calendar').value, textCalendar: $('date-text-calendar').value,
   textFormat: $('date-text-format').value, file: draftFile });
 const builderActive = () => editingIndex !== null || JSON.stringify(readDraft()) !== builderBaseline;
-const canSwitch = () => loaded && !busy && !jsonDirty() && !builderActive();
+const canSwitch = () => loaded && !busy && pendingDeleteId === null && !stale && !jsonDirty() && !builderActive();
 
 function resetBuilder() {
   editingIndex = null;
@@ -55,20 +61,29 @@ function setDraft(draft) {
 function updateState() {
   const builder = builderActive();
   const json = jsonDirty();
-  const unavailable = !loaded || busy;
+  const unavailable = !loaded || busy || pendingDeleteId !== null;
+  $('preset-delete-confirmation').hidden = pendingDeleteId === null;
+  $('preset-delete-confirm').disabled = pendingDeleteId === null || busy || stale || builder || json;
+  $('preset-delete-cancel').disabled = pendingDeleteId === null;
+  if (pendingDeleteId === null) $('preset-delete-warning').textContent = '';
+  for (const id of ['preset-select', 'preset-name', 'preset-save', 'preset-rename', 'preset-delete']) $(id).disabled = unavailable || stale || builder || json;
+  $('preset-delete').disabled ||= !presetState || presetState.presets.length <= 1;
+  if (presetState) $('preset-select').value = presetState.activeId;
   $('auto-next').disabled = unavailable;
   $('allow-incomplete').disabled = unavailable || !$('auto-next').checked;
   $('saved-state').textContent = !loaded ? 'ยังไม่พร้อม' : builder || json ? 'ยังไม่บันทึก · ปิดแล้วจะหาย' : `บันทึกแล้ว · ${savedRules.length} กฎ`;
   $('saved-state').classList.toggle('dirty', builder || json);
-  for (const id of ['save', 'import-text', 'rules']) $(id).disabled = unavailable || builder;
-  $('import-file').disabled = unavailable || builder || json;
+  for (const id of ['save', 'import-text']) $(id).disabled = unavailable || stale || builder;
+  $('rules').disabled = unavailable || builder;
+  $('import-file').disabled = unavailable || stale || builder || json;
   $('export').disabled = unavailable;
   $('json-cancel').disabled = unavailable || !json;
   for (const id of [...builderFields, 'rule-file', 'rule-save']) $(id).disabled = unavailable || json;
+  $('rule-save').disabled ||= stale;
   $('rule-cancel').disabled = unavailable || !builder;
-  for (const id of ['inspect', 'fill']) $(id).disabled = unavailable || builder || json;
-  $('question-select').disabled = unavailable || builder || json || !questionCount;
-  for (const button of rowButtons) button.disabled = unavailable || builder || json;
+  for (const id of ['inspect', 'fill']) $(id).disabled = unavailable || stale || builder || json;
+  $('question-select').disabled = unavailable || stale || builder || json || !questionCount;
+  for (const button of rowButtons) button.disabled = unavailable || stale || builder || json;
   $('builder-title').textContent = editingIndex === null ? 'เพิ่มกฎ' : `แก้ไขกฎ #${editingIndex + 1}`;
   $('rule-save').textContent = editingIndex === null ? 'เพิ่มและบันทึกกฎ' : 'บันทึกการแก้ไขกฎนี้';
   $('rule-cancel').textContent = editingIndex === null ? 'ยกเลิกร่าง' : 'ยกเลิกการแก้ไข';
@@ -96,12 +111,12 @@ function updateState() {
       $('date-preview').classList.toggle('error', true);
     }
   }
-  $('draft-help').textContent = builder ? 'บันทึกกฎนี้หรือกดยกเลิกก่อนเลือกกฎอื่น อ่าน/กรอกฟอร์ม หรือแก้ JSON · คีย์ลัดยังใช้กฎที่บันทึกไว้' :
-    json ? 'บันทึก JSON หรือกด “ยกเลิกแก้ JSON” ก่อนใช้ตัวช่วยหรือนำเข้าไฟล์ · คีย์ลัดยังใช้กฎที่บันทึกไว้' : '';
+  $('draft-help').textContent = builder ? 'บันทึกกฎนี้หรือกดยกเลิกก่อนเลือกกฎอื่น จัดการชุดกฎ อ่าน/กรอกฟอร์ม หรือแก้ JSON · คีย์ลัดยังใช้กฎที่บันทึกไว้' :
+    json ? 'บันทึก JSON หรือกด “ยกเลิกแก้ JSON” ก่อนจัดการชุดกฎ ใช้ตัวช่วย หรือนำเข้าไฟล์ · คีย์ลัดยังใช้กฎที่บันทึกไว้' : '';
 }
-function message(value, error = false) {
-  $('message').textContent = value;
-  $('message').classList.toggle('error', error);
+function message(value, error = false, id = 'message') {
+  $(id).textContent = value;
+  $(id).classList.toggle('error', error);
 }
 function dateSummary(value) {
   return `ช่องวันที่ → ${value.iso} (ค.ศ. ISO) · ช่องข้อความ → ${formatDateAnswer(value)} (${value.textCalendar === 'buddhist' ? 'พ.ศ.' : 'ค.ศ.'})`;
@@ -149,23 +164,114 @@ function renderRules() {
     $('rule-list').append(item);
   });
 }
-async function commit(input, staged = null) {
-  const rules = validateRules(input);
+function showPreset() {
+  savedRules = activePreset(presetState).rules;
+  savedText = JSON.stringify(savedRules, null, 2);
+  $('rules').value = savedText;
+  $('preset-select').replaceChildren();
+  for (const preset of presetState.presets) {
+    const option = document.createElement('option');
+    option.value = preset.id;
+    option.textContent = preset.name;
+    $('preset-select').append(option);
+  }
+  $('preset-select').value = presetState.activeId;
+  $('preset-name').value = activePreset(presetState).name;
+  resetBuilder();
+  renderRules();
+}
+function markStale() {
+  stale = true;
+  pendingDeleteId = null;
+  message('ชุดกฎเปลี่ยนจากหน้าต่างอื่น · ร่างในหน้านี้ยังอยู่ คัดลอกร่างที่ต้องการเก็บก่อนเปิด popup ใหม่เพื่อโหลดข้อมูลล่าสุด', true, 'preset-status');
+  updateState();
+}
+async function checkFresh() {
+  const stored = await chrome.storage.local.get(['presetState', 'rules']);
+  let current;
+  try { current = readPresetState(stored); }
+  catch (error) { markStale(); throw error; }
+  if (stale || JSON.stringify(current) !== JSON.stringify(presetState)) {
+    markStale();
+    throw new Error('ชุดกฎเปลี่ยนจากหน้าต่างอื่น · เปิด popup ใหม่ก่อนบันทึก');
+  }
+}
+async function persistPreset(input, staged, statusId) {
+  const next = validatePresetState(input);
   busy = true;
   updateState();
   try {
-    const { cleanupFailed } = await saveRulesWithFiles(savedRules, rules, staged, rules => chrome.storage.local.set({ rules }));
-    savedRules = rules;
-    savedText = JSON.stringify(rules, null, 2);
-    $('rules').value = savedText;
-    resetBuilder();
-    renderRules();
-    message(`บันทึกแล้ว ปุ่มและคีย์ลัดจะใช้กฎชุดนี้${cleanupFailed ? ' · ลบสำเนาเก่าไม่ได้ ยังเก็บไว้ในเครื่อง' : ''}`);
-    return cleanupFailed;
-  } finally { busy = false; updateState(); }
+    // Serialize the re-read, write and blob cleanup across popup windows on this origin.
+    return await navigator.locks.request('regex-form-filler-presets', async () => {
+      await checkFresh();
+      pendingState = next;
+      const { cleanupFailed } = await saveRulesWithFiles(
+        presetState.presets.flatMap(preset => preset.rules), activePreset(next).rules, staged,
+        () => chrome.storage.local.set({ presetState: next }),
+        next.presets.filter(preset => preset.id !== next.activeId).flatMap(preset => preset.rules));
+      presetState = next;
+      migrated = true;
+      showPreset();
+      if (!stale || statusId === 'message') message(`บันทึกแล้ว ปุ่มและคีย์ลัดจะใช้ชุด “${activePreset(next).name}”${cleanupFailed ? ' · ลบสำเนาเก่าไม่ได้ ยังเก็บไว้ในเครื่อง' : ''}`, false, statusId);
+      return cleanupFailed;
+    });
+  } finally { pendingState = undefined; busy = false; updateState(); }
 }
+async function commit(input, staged = null) {
+  const rules = validateRules(input);
+  return persistPreset({ ...presetState, presets: presetState.presets.map(preset =>
+    preset.id === presetState.activeId ? { ...preset, rules } : preset) }, staged, 'message');
+}
+async function changePreset(action) {
+  const selectedId = $('preset-select').value;
+  if (action === 'confirm-delete') {
+    if (pendingDeleteId === null || pendingDeleteId !== presetState?.activeId || busy) return;
+    pendingDeleteId = null;
+  }
+  if (!canSwitch()) { updateState(); return; }
+  try {
+    const next = structuredClone(presetState);
+    const current = activePreset(next);
+    if (action === 'select') next.activeId = selectedId;
+    else if (action === 'delete' || action === 'confirm-delete') {
+      if (next.presets.length <= 1) return;
+      if (action === 'delete') {
+        pendingDeleteId = current.id;
+        message('', false, 'preset-status');
+        $('preset-delete-warning').textContent = `ลบชุด “${current.name}” และกฎทั้งหมดในชุดนี้? สำเนาไฟล์ที่ไม่มีชุดอื่นใช้จะถูกลบด้วย · ย้อนกลับไม่ได้`;
+        updateState();
+        $('preset-delete-cancel').focus();
+        return;
+      }
+      next.presets = next.presets.filter(preset => preset.id !== current.id);
+      next.activeId = next.presets[0].id;
+    } else {
+      const name = validatePresetName($('preset-name').value);
+      if (action === 'rename') current.name = name;
+      else {
+        next.activeId = crypto.randomUUID();
+        next.presets.push({ id: next.activeId, name, rules: current.rules });
+      }
+    }
+    await persistPreset(next, null, 'preset-status');
+    if (action === 'confirm-delete' && !stale) $('preset-select').focus();
+  } catch (error) {
+    if (!stale) message(`${error.message} · ชุดกฎเดิมยังอยู่`, true, 'preset-status');
+  }
+  finally { updateState(); }
+}
+$('preset-select').addEventListener('change', () => changePreset('select'));
+for (const [id, action] of [['preset-save', 'save'], ['preset-rename', 'rename'], ['preset-delete', 'delete'], ['preset-delete-confirm', 'confirm-delete']]) {
+  $(id).addEventListener('click', () => changePreset(action));
+}
+$('preset-delete-cancel').addEventListener('click', () => {
+  if (pendingDeleteId === null) return;
+  pendingDeleteId = null;
+  updateState();
+  $('preset-delete').focus();
+});
 async function saveEditor() {
-  if (!loaded || busy || builderActive()) return;
+  if (!loaded || busy || pendingDeleteId !== null || stale || builderActive()) return;
   try { await commit(parseRules($('rules').value)); }
   catch (error) { message(`${error.message} · กฎเดิมยังอยู่`, true); }
 }
@@ -209,18 +315,19 @@ async function run(dryRun) {
   updateState();
   message(dryRun ? 'กำลังอ่านและตรวจชื่อคำถาม…' : 'กำลังตรวจและกรอก…');
   try {
+    await checkFresh();
     const report = await chrome.runtime.sendMessage({ type: 'run', dryRun });
     renderReport(report);
     if (dryRun) showQuestions(report);
     message(report.ok ? dryRun ? 'อ่านแล้ว เลือกคำถามเพื่อเพิ่มกฎ หรือดูผลการจับคู่ด้านล่าง' : 'ดูผลแต่ละข้อด้านล่าง' : report.error, !report.ok);
-  } catch {
+  } catch (error) {
     if (dryRun) showQuestions({ ok: false });
-    message('ติดต่อส่วนขยายไม่ได้ โปรดเปิดหน้าต่างนี้ใหม่ หรือพิมพ์ชื่อคำถามเอง', true);
+    message(stale ? error.message : 'ติดต่อส่วนขยายไม่ได้ โปรดเปิดหน้าต่างนี้ใหม่ หรือพิมพ์ชื่อคำถามเอง', true);
   } finally { busy = false; updateState(); }
 }
 
 for (const id of ['auto-next', 'allow-incomplete']) $(id).addEventListener('change', async () => {
-  if (!loaded || busy || id === 'allow-incomplete' && !shortcutOptions.autoNext) return;
+  if (!loaded || busy || pendingDeleteId !== null || id === 'allow-incomplete' && !shortcutOptions.autoNext) return;
   const next = normalizeShortcutOptions({ autoNext: $('auto-next').checked, allowIncomplete: $('allow-incomplete').checked });
   busy = true;
   updateState();
@@ -242,7 +349,7 @@ for (const id of ['auto-next', 'allow-incomplete']) $(id).addEventListener('chan
 
 for (const id of builderFields) $(id).addEventListener(['rule-mode', 'answer-type', 'date-input-calendar', 'date-text-calendar', 'date-text-format'].includes(id) ? 'change' : 'input', () => { updateState(); message(''); });
 $('rule-file').addEventListener('change', () => {
-  if (!loaded || busy || jsonDirty()) return;
+  if (!loaded || busy || pendingDeleteId !== null || jsonDirty()) return;
   const file = $('rule-file').files[0];
   if (!file) return; // Cancelling the native chooser retains the current draft/reference.
   try {
@@ -256,7 +363,7 @@ $('rule-file').addEventListener('change', () => {
 });
 $('rule-form').addEventListener('submit', async event => {
   event.preventDefault();
-  if (!loaded || busy || jsonDirty()) return;
+  if (!loaded || busy || pendingDeleteId !== null || stale || jsonDirty()) return;
   try {
     const original = editingIndex === null ? undefined : savedRules[editingIndex];
     const draft = readDraft();
@@ -277,7 +384,7 @@ $('rule-form').addEventListener('submit', async event => {
   } catch (error) { message(`${error.message} · กฎเดิมยังอยู่`, true); }
 });
 $('rule-cancel').addEventListener('click', () => {
-  if (!loaded || busy) return;
+  if (!loaded || busy || pendingDeleteId !== null) return;
   resetBuilder(); updateState(); message('ยกเลิกร่างแล้ว กฎที่บันทึกยังอยู่'); $('rule-source').focus();
 });
 $('question-select').addEventListener('change', () => {
@@ -288,7 +395,7 @@ $('question-select').addEventListener('change', () => {
 });
 $('rules').addEventListener('input', () => { updateState(); message(jsonDirty() ? 'มี JSON ที่ยังไม่บันทึก คีย์ลัดยังใช้กฎเดิม' : ''); });
 $('json-cancel').addEventListener('click', () => {
-  if (!loaded || busy || builderActive()) return;
+  if (!loaded || busy || pendingDeleteId !== null || builderActive()) return;
   $('rules').value = savedText; updateState(); message('ยกเลิกแก้ JSON แล้ว'); $('rules').focus();
 });
 $('save').addEventListener('click', saveEditor);
@@ -306,18 +413,24 @@ $('file').addEventListener('change', async () => {
   finally { $('file').value = ''; busy = false; updateState(); }
 });
 $('export').addEventListener('click', () => {
-  if (!loaded || busy) return;
+  if (!loaded || busy || pendingDeleteId !== null) return;
   const url = URL.createObjectURL(new Blob([JSON.stringify(savedRules, null, 2) + '\n'], { type: 'application/json;charset=utf-8' }));
   const link = document.createElement('a');
   link.href = url;
   link.download = 'regex-form-filler-rules.json';
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  message('ส่งออกกฎที่บันทึกแล้ว ไฟล์นี้มีคำตอบ โปรดเก็บอย่างเหมาะสม');
+  message('ส่งออกกฎที่บันทึกของชุดที่เลือกแล้ว ไฟล์นี้มีคำตอบ โปรดเก็บอย่างเหมาะสม');
 });
 $('inspect').addEventListener('click', () => run(true));
 $('fill').addEventListener('click', () => run(false));
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && loaded && (changes.presetState || !migrated && changes.rules)) {
+    try {
+      const current = readPresetState(changes.presetState ? { presetState: changes.presetState.newValue } : { rules: changes.rules.newValue });
+      if (![presetState, pendingState].some(state => state && JSON.stringify(state) === JSON.stringify(current))) markStale();
+    } catch { markStale(); }
+  }
   if (area === 'session' && changes[`report-${tabId}`]) renderReport(changes[`report-${tabId}`].newValue);
 });
 
@@ -325,20 +438,19 @@ resetBuilder();
 updateState();
 try {
   const [stored, commands, tabs] = await Promise.all([
-    chrome.storage.local.get(['rules', 'shortcutOptions']), chrome.commands.getAll(), chrome.tabs.query({ active: true, currentWindow: true })
+    chrome.storage.local.get(['presetState', 'rules', 'shortcutOptions']), chrome.commands.getAll(), chrome.tabs.query({ active: true, currentWindow: true })
   ]);
-  savedRules = validateRules(stored.rules || []);
+  presetState = readPresetState(stored);
+  migrated = Object.hasOwn(stored, 'presetState');
   shortcutOptions = normalizeShortcutOptions(stored.shortcutOptions);
   $('auto-next').checked = shortcutOptions.autoNext;
   $('allow-incomplete').checked = shortcutOptions.allowIncomplete;
-  savedText = JSON.stringify(savedRules, null, 2);
-  $('rules').value = savedText;
   tabId = tabs[0]?.id;
   const shortcut = commands.find(command => command.name === 'fill-form')?.shortcut;
   $('shortcut').textContent = shortcut || 'ยังไม่ได้กำหนด';
   $('shortcut-warning').hidden = !!shortcut;
-  renderRules();
+  showPreset();
   loaded = true;
   updateState();
   if (tabId) renderReport((await chrome.storage.session.get(`report-${tabId}`))[`report-${tabId}`]);
-} catch { message('โหลดข้อมูลส่วนขยายไม่ได้ โปรดลองเปิดใหม่', true); }
+} catch (error) { message(`โหลดข้อมูลส่วนขยายไม่ได้ · ${error.message} · ยังไม่เขียนทับข้อมูลเดิม โปรดลองเปิดใหม่`, true); }

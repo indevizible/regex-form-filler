@@ -26,18 +26,28 @@ async function popup(initial = [{ pattern: '^ชื่อจริง$', flags: 
     }
     return elements.get(id);
   };
-  const state = { options: structuredClone(shortcutOptions), updates: [], stored: structuredClone(initial), writes: 0, runs: 0, failStorage: false,
+  const data = structuredClone(Array.isArray(initial) ? { rules: initial } : initial);
+  const listeners = [];
+  const state = { data, confirmations: [], options: structuredClone(shortcutOptions), updates: [],
+    get stored() { return data.presetState ? data.presetState.presets.find(p => p.id === data.presetState.activeId)?.rules : data.rules; }, writes: 0, runs: 0, failStorage: false,
     report: { ok: false, error: 'synthetic response' } };
+  globalThis.confirm = text => { state.confirmations.push(text); return true; };
+  let lockTail = Promise.resolve();
+  Object.defineProperty(globalThis.navigator, 'locks', { configurable: true, value: { request: (_name, action) => {
+    const result = lockTail.then(action); lockTail = result.catch(() => {}); return result;
+  } } });
   globalThis.document = { getElementById: element, createElement: node };
   globalThis.chrome = {
     storage: {
-      local: { get: async () => ({ rules: state.stored, shortcutOptions: state.options }), set: async update => {
+      local: { get: async () => structuredClone({ ...data, shortcutOptions: state.options }), set: async update => {
         if (state.failStorage) throw new Error('พื้นที่จัดเก็บไม่พร้อม');
         state.writes++; state.updates.push(structuredClone(update));
-        if ('rules' in update) state.stored = structuredClone(update.rules);
+        const changes = Object.fromEntries(Object.entries(update).map(([key, newValue]) => [key, { oldValue: data[key], newValue }]));
+        Object.assign(data, structuredClone(update));
+        for (const listener of listeners) listener(changes, 'local');
         if ('shortcutOptions' in update) state.options = structuredClone(update.shortcutOptions);
       } },
-      session: { get: async () => ({}) }, onChanged: { addListener() {} }
+      session: { get: async () => ({}) }, onChanged: { addListener: fn => listeners.push(fn) }
     },
     commands: { getAll: async () => [{ name: 'fill-form', shortcut: '' }] },
     tabs: { query: async () => [{ id: 7 }] },
@@ -51,7 +61,11 @@ async function popup(initial = [{ pattern: '^ชื่อจริง$', flags: 
     const find = entry => entry.tagName === 'button' && entry.textContent === name ? entry : entry.children.map(find).find(Boolean);
     return row && find(row)?.click();
   };
-  return { element, state, fire, input, rowAction, focused: () => focused };
+  const external = (update, notify = true) => {
+    Object.assign(data, structuredClone(update));
+    if (notify) for (const listener of listeners) listener(Object.fromEntries(Object.entries(update).map(([key, newValue]) => [key, { newValue }])), 'local');
+  };
+  return { element, state, fire, input, rowAction, external, focused: () => focused };
 }
 
 test('popup displays actual unassigned shortcut and blocks unsaved runs', async () => {
@@ -563,4 +577,261 @@ test('file: missing imported reference requests reselection; bad chooser and IDB
   assert.equal(element('rule-cancel').disabled, false);
   input('rule-source', 'New heading');
   assert.match(element('file-summary').textContent, /TEST-ONLY/);
+});
+
+const twoPresets = () => ({ activeId: 'first', presets: [
+  { id: 'first', name: 'ชุดแรก', rules: [{ pattern: '^ชื่อจริง$', flags: 'iu', value: 'แรก' }] },
+  { id: 'second', name: 'ชุดสอง', rules: [{ pattern: '^ชื่อจริง$', flags: 'iu', value: 'สอง' }] }
+] });
+
+test('presets: legacy rules migrate lazily with refs intact; cloning selects a saved independent copy', async () => {
+  const legacy = [fileRule()];
+  const p = await popup(legacy);
+  assert.equal(p.element('preset-select').children[0]?.textContent, 'ค่าเริ่มต้น');
+  assert.equal(p.state.writes, 0);
+  p.input('preset-name', '  สำเนา  '); await p.fire('preset-save');
+  const saved = p.state.data.presetState;
+  assert.equal(saved.presets.length, 2);
+  assert.equal(saved.presets[1].name, 'สำเนา');
+  assert.equal(saved.activeId, saved.presets[1].id);
+  assert.deepEqual(saved.presets.map(x => x.rules), [legacy, legacy]);
+  assert.deepEqual(p.state.data.rules, legacy, 'legacy key is not an active-rules cache');
+  assert.deepEqual(Object.keys(p.state.updates[0]), ['presetState']);
+  const reopened = await popup(p.state.data);
+  assert.equal(reopened.element('preset-select').value, saved.activeId);
+  assert.equal(reopened.element('preset-name').value, 'สำเนา');
+  reopened.input('rules', '[]'); await reopened.fire('save');
+  assert.deepEqual(reopened.state.data.presetState.presets[0].rules, legacy);
+  assert.deepEqual(reopened.state.stored, []);
+});
+
+test('presets: switch persists selection, edits/import/export affect only active rules and Next stays global', async () => {
+  const p = await popup({ presetState: twoPresets() }, { autoNext: true, allowIncomplete: true });
+  await p.input('preset-select', 'second', 'change');
+  assert.equal(p.state.data.presetState.activeId, 'second');
+  assert.equal(JSON.parse(p.element('rules').value)[0].value, 'สอง');
+  p.input('rules', '[{"pattern":"^อาหาร$","value":"ข้าว"}]'); await p.fire('save');
+  assert.equal(p.state.data.presetState.presets[0].rules[0].value, 'แรก');
+  let exported;
+  const create = URL.createObjectURL;
+  URL.createObjectURL = blob => { exported = blob; return 'blob:presets'; };
+  try { await p.fire('export'); } finally { URL.createObjectURL = create; }
+  assert.deepEqual(JSON.parse(await exported.text()), [{ pattern: '^อาหาร$', flags: 'iu', value: 'ข้าว' }]);
+  assert.deepEqual(p.state.options, { autoNext: true, allowIncomplete: true });
+  const reopened = await popup(p.state.data, p.state.options);
+  assert.equal(reopened.element('preset-select').value, 'second');
+  assert.equal(reopened.element('auto-next').checked, true);
+});
+
+test('presets: trimmed bounded names reject blanks and duplicates; rename leaves rules intact', async () => {
+  const p = await popup({ presetState: twoPresets() });
+  for (const name of ['', '   ', 'x'.repeat(81), ' ชุดสอง ']) {
+    p.input('preset-name', name);
+    await p.fire('preset-save'); await p.fire('preset-rename');
+    assert.equal(p.state.writes, 0, name);
+    assert.match(p.element('preset-status').textContent, /ชื่อ|ซ้ำ/);
+  }
+  p.input('preset-name', '  ชื่อใหม่  '); await p.fire('preset-rename');
+  assert.equal(p.state.data.presetState.presets[0].name, 'ชื่อใหม่');
+  assert.equal(p.state.stored[0].value, 'แรก');
+  assert.equal(p.element('preset-select').children[0].textContent, 'ชื่อใหม่');
+  p.input('preset-name', 'x'.repeat(80)); await p.fire('preset-save');
+  assert.equal(p.state.data.presetState.presets.length, 3);
+});
+
+test('presets: inline deletion names the preset, cancels without writes and requires explicit confirm', async () => {
+  const p = await popup({ presetState: twoPresets() });
+  assert.equal(p.element('preset-delete-confirmation').hidden, true);
+  await p.fire('preset-delete-confirm');
+  assert.equal(p.state.writes, 0);
+  await p.fire('preset-delete');
+  assert.equal(p.state.writes, 0);
+  assert.equal(p.state.confirmations.length, 0, 'no native dialog');
+  assert.equal(p.element('preset-delete-confirmation').hidden, false);
+  assert.ok(p.element('preset-delete-warning').textContent.includes(twoPresets().presets[0].name));
+  assert.equal(p.element('preset-delete-cancel').disabled, false);
+  assert.equal(p.focused(), p.element('preset-delete-cancel'));
+  await p.fire('preset-delete-cancel');
+  assert.equal(p.element('preset-delete-confirmation').hidden, true);
+  assert.equal(p.focused(), p.element('preset-delete'));
+  await p.fire('preset-delete-confirm');
+  assert.equal(p.state.writes, 0);
+  await p.fire('preset-delete'); await p.fire('preset-delete-confirm');
+  assert.equal(p.state.data.presetState.activeId, 'second');
+  assert.equal(p.focused(), p.element('preset-select'));
+  assert.equal(p.state.data.presetState.presets.length, 1);
+  assert.equal(p.element('preset-delete-confirmation').hidden, true);
+  assert.equal(p.element('preset-delete').disabled, true);
+  await p.fire('preset-delete'); await p.fire('preset-delete-confirm');
+  assert.equal(p.state.writes, 1);
+  assert.equal(p.state.confirmations.length, 0);
+});
+
+test('presets: every operation preserves dirty builder and JSON edits even when handlers are invoked', async () => {
+  for (const kind of ['builder', 'json']) {
+    const p = await popup({ presetState: twoPresets() });
+    const field = kind === 'builder' ? 'rule-answer' : 'rules';
+    p.input(field, 'unsaved');
+    for (const id of ['preset-select', 'preset-save', 'preset-rename', 'preset-delete']) assert.equal(p.element(id).disabled, true, id);
+    await p.input('preset-select', 'second', 'change');
+    for (const id of ['preset-save', 'preset-rename', 'preset-delete']) await p.fire(id);
+    assert.equal(p.state.writes, 0); assert.equal(p.state.confirmations.length, 0);
+    assert.equal(p.element(field).value, 'unsaved');
+    assert.equal(p.element('preset-select').value, 'first');
+    assert.match(p.element('draft-help').textContent, /ชุด/);
+  }
+});
+
+test('presets: failed writes restore selection/state and leave the requested name available to retry', async () => {
+  for (const action of ['preset-save', 'preset-rename', 'preset-delete', 'preset-select']) {
+    const p = await popup({ presetState: twoPresets() });
+    p.state.failStorage = true; p.input('preset-name', 'ลองใหม่');
+    if (action === 'preset-select') await p.input(action, 'second', 'change');
+    else await p.fire(action);
+    if (action === 'preset-delete') await p.fire('preset-delete-confirm');
+    assert.deepEqual(p.state.data.presetState, twoPresets());
+    assert.equal(p.element('preset-select').value, 'first');
+    assert.equal(p.element('preset-name').value, 'ลองใหม่');
+    assert.equal(p.element('preset-save').disabled, false);
+    assert.match(p.element('preset-status').textContent, /ไม่สำเร็จ|ไม่พร้อม/);
+  }
+});
+
+test('presets: malformed stored state blocks writes instead of falling back to empty or legacy rules', async () => {
+  for (const presetState of [null, {}, { activeId: 'missing', presets: [] },
+    { ...twoPresets(), activeId: 'missing' }, { activeId: 'first', presets: [...twoPresets().presets, twoPresets().presets[0]] },
+    { activeId: 'first', presets: [{ id: 'first', name: 'bad', rules: null }] }]) {
+    const p = await popup({ rules: [], presetState });
+    await p.fire('preset-save'); await p.fire('save');
+    assert.equal(p.state.writes, 0); assert.equal(p.element('fill').disabled, true);
+    assert.deepEqual(p.state.data.presetState, presetState);
+  }
+});
+
+test('presets: storage change notifications guard drafts, and a prewrite re-read catches missed events', async () => {
+  for (const notify of [true, false]) {
+    const p = await popup({ presetState: twoPresets() });
+    p.input('rule-source', 'new'); p.input('rule-answer', 'draft');
+    const newer = twoPresets(); newer.presets[0].rules[0].value = 'newer window';
+    p.external({ presetState: newer }, notify);
+    await p.fire('rule-form', 'submit');
+    assert.equal(p.state.writes, 0); assert.deepEqual(p.state.data.presetState, newer);
+    assert.equal(p.element('rule-answer').value, 'draft');
+    assert.match(p.element('preset-status').textContent, /เปิด.*ใหม่/);
+    await p.fire('rule-cancel'); await p.fire('fill');
+    assert.equal(p.state.runs, 0);
+  }
+});
+
+test('presets: serialized re-read and busy guards prevent a competing write from being overwritten', async () => {
+  const p = await popup({ presetState: twoPresets() });
+  let release;
+  const competing = navigator.locks.request('regex-form-filler-presets', async () => {
+    await new Promise(resolve => { release = resolve; });
+    const newer = twoPresets(); newer.presets[1].name = 'other window';
+    p.external({ presetState: newer }, false);
+  });
+  await Promise.resolve();
+  p.input('preset-name', 'new');
+  const saving = p.fire('preset-save');
+  assert.equal(p.element('preset-save').disabled, true);
+  await p.fire('preset-delete'); await p.fire('preset-rename');
+  release(); await competing; await saving;
+  assert.equal(p.state.writes, 0);
+  assert.equal(p.state.data.presetState.presets[1].name, 'other window');
+  assert.match(p.element('preset-status').textContent, /เปิด.*ใหม่/);
+});
+
+test('presets: shared/inactive blobs survive edits and failed deletes; final-reference deletion cleans up after persistence', async () => {
+  const idb = fakeIDB(); globalThis.indexedDB = idb.api;
+  const ref = fileRef(); idb.records.set(ref.fileId, { ref, blob: testFile() });
+  const presetState = twoPresets();
+  presetState.presets.forEach(p => { p.rules = [fileRule(ref)]; });
+  const p = await popup({ presetState });
+  await p.rowAction(0, 'ลบ');
+  assert.ok(idb.records.has(ref.fileId));
+  await p.input('preset-select', 'second', 'change');
+  p.state.failStorage = true; await p.fire('preset-delete'); await p.fire('preset-delete-confirm');
+  assert.ok(idb.records.has(ref.fileId)); assert.equal(p.state.data.presetState.presets.length, 2);
+  p.state.failStorage = false; await p.fire('preset-delete'); await p.fire('preset-delete-confirm');
+  assert.equal(idb.records.has(ref.fileId), false);
+  assert.deepEqual(p.state.stored, []);
+});
+
+test('presets: pending inline deletion guards edits and switching; cancel invalidates the old target', async () => {
+  const p = await popup({ presetState: twoPresets() });
+  await p.fire('preset-delete');
+  for (const id of ['preset-select', 'preset-name', 'preset-save', 'preset-rename', 'preset-delete',
+    'rule-source', 'rule-answer', 'rule-file', 'rule-save', 'rules', 'save', 'import-text', 'import-file',
+    'auto-next', 'allow-incomplete', 'fill', 'inspect']) assert.equal(p.element(id).disabled, true, id);
+  assert.equal(p.element('preset-delete-cancel').disabled, false);
+  await p.input('preset-select', 'second', 'change');
+  assert.equal(p.element('preset-select').value, 'first');
+  for (const id of ['preset-save', 'preset-rename', 'save', 'import-text', 'fill', 'inspect']) await p.fire(id);
+  await p.rowAction(0, 'แก้ไข'); await p.rowAction(0, 'ลบ');
+  assert.equal(p.element('rule-source').value, '');
+  p.element('auto-next').checked = true; await p.fire('auto-next', 'change');
+  p.element('file').files = [{ size: 2, text: async () => '[]' }]; await p.fire('file', 'change');
+  p.element('rule-file').files = [testFile()]; await p.fire('rule-file', 'change');
+  p.element('rule-source').value = 'new'; p.element('rule-answer').value = 'draft';
+  await p.fire('rule-form', 'submit');
+  assert.equal(p.state.writes, 0); assert.equal(p.state.runs, 0);
+  assert.deepEqual(p.state.data.presetState, twoPresets());
+  assert.equal(p.element('preset-delete-confirmation').hidden, false);
+  p.element('rule-source').value = ''; p.element('rule-answer').value = '';
+  await p.fire('preset-delete-cancel');
+  await p.input('preset-select', 'second', 'change');
+  await p.fire('preset-delete-confirm');
+  assert.equal(p.state.writes, 1, 'old confirmation cannot delete the newly selected preset');
+  assert.equal(p.state.data.presetState.activeId, 'second');
+  assert.equal(p.state.data.presetState.presets.length, 2);
+  await p.fire('preset-delete');
+  assert.ok(p.element('preset-delete-warning').textContent.includes(twoPresets().presets[1].name));
+  await p.fire('preset-delete-confirm');
+  assert.equal(p.state.data.presetState.activeId, 'first');
+  assert.equal(p.state.data.presetState.presets.length, 1);
+});
+
+test('presets: external changes reset inline confirmation and stale warning survives later actions', async () => {
+  for (const notify of [true, false]) {
+    const p = await popup({ presetState: twoPresets() });
+    await p.fire('preset-delete');
+    const newer = twoPresets(); newer.activeId = 'second';
+    p.external({ presetState: newer }, notify);
+    if (notify) assert.equal(p.element('preset-delete-confirmation').hidden, true);
+    await p.fire('preset-delete-confirm');
+    assert.equal(p.element('preset-delete-confirmation').hidden, true);
+    assert.equal(p.state.writes, 0); assert.deepEqual(p.state.data.presetState, newer);
+    const warning = p.element('preset-status').textContent;
+    assert.match(warning, /เปิด.*ใหม่/);
+    for (const id of ['preset-delete-cancel', 'preset-delete', 'preset-delete-confirm', 'preset-save', 'preset-rename']) await p.fire(id);
+    await p.input('preset-select', 'second', 'change');
+    assert.equal(p.element('preset-status').textContent, warning);
+    assert.equal(p.element('preset-delete-confirmation').hidden, true);
+    assert.equal(p.element('preset-save').disabled, true);
+    assert.equal(p.state.writes, 0);
+  }
+});
+
+test('presets: success and failure feedback stays beside presets and preserves ordinary rule messages', async () => {
+  const p = await popup({ presetState: twoPresets() });
+  p.element('message').textContent = 'existing rule feedback';
+  for (const name of ['', ' ชุดสอง ']) {
+    p.input('preset-name', name); await p.fire('preset-save');
+    assert.match(p.element('preset-status').textContent, /ชื่อ|ซ้ำ/);
+    assert.equal(p.element('message').textContent, 'existing rule feedback');
+  }
+  p.input('preset-name', 'Renamed'); await p.fire('preset-rename');
+  assert.match(p.element('preset-status').textContent, /Renamed/);
+  assert.equal(p.element('message').textContent, 'existing rule feedback');
+  p.input('preset-name', 'Copy'); await p.fire('preset-save');
+  assert.match(p.element('preset-status').textContent, /Copy/);
+  assert.equal(p.element('message').textContent, 'existing rule feedback');
+  p.state.failStorage = true;
+  p.input('preset-name', 'Failed'); await p.fire('preset-rename');
+  assert.match(p.element('preset-status').textContent, /ไม่สำเร็จ|ไม่พร้อม/);
+  assert.equal(p.element('message').textContent, 'existing rule feedback');
+  p.state.failStorage = false;
+  p.input('rules', '[]'); await p.fire('save');
+  assert.notEqual(p.element('message').textContent, 'existing rule feedback');
 });

@@ -7,14 +7,28 @@
 <body>
   <main>
     <header><div class="eyebrow">GOOGLE FORMS · SAVED LOCALLY</div><h1>Regex Form Filler</h1><p id="extension-version" class="hint"></p><p>เลือกชื่อคำถาม ใส่คำตอบ แล้วบันทึกกฎ</p></header>
+    <section class="preset-panel" aria-labelledby="preset-title">
+      <h2 id="preset-title">ชุดกฎที่ใช้</h2>
+      <div class="preset-fields">
+        <div><label for="preset-select">ชุดที่เลือก</label><select id="preset-select" aria-describedby="preset-help preset-status" disabled></select></div>
+        <div><label for="preset-name">ชื่อชุด (ไม่เกิน 80 ตัวอักษร)</label><input id="preset-name" type="text" maxlength="80" autocomplete="off" disabled></div>
+      </div>
+      <div class="button-row"><button id="preset-save" disabled>บันทึกเป็นชุดใหม่</button><button id="preset-rename" disabled>เปลี่ยนชื่อ</button><button id="preset-delete" disabled>ลบชุด</button></div>
+      <p id="preset-help" class="hint">ชุดใหม่คัดลอกกฎที่บันทึกไว้ · แก้กฎเฉพาะชุดที่เลือก · บันทึกหรือยกเลิกร่างกฎ/JSON ก่อนจัดการชุด</p>
+      <p id="preset-status" role="status" aria-live="polite"></p>
+      <div id="preset-delete-confirmation" role="group" aria-labelledby="preset-delete-warning" hidden>
+        <p id="preset-delete-warning" class="warning"></p>
+        <div class="button-row"><button id="preset-delete-confirm" type="button" disabled>ยืนยันลบชุด</button><button id="preset-delete-cancel" type="button" disabled>ยกเลิก</button></div>
+      </div>
+    </section>
     <section class="run-panel" aria-labelledby="run-title">
       <h2 id="run-title">ใช้กับหน้าปัจจุบันของฟอร์ม</h2>
       <div class="button-row"><button id="inspect" disabled>อ่านคำถามจากฟอร์ม</button><button id="fill" class="primary" disabled>กรอกหน้านี้</button></div>
       <div class="shortcut"><span>คีย์ลัดที่ใช้งานจริง</span><strong id="shortcut">กำลังอ่าน…</strong></div>
       <p id="shortcut-warning" class="warning" hidden>ยังไม่ได้กำหนดคีย์ลัด เปิด Extensions → Keyboard shortcuts แล้วกำหนดให้ Regex Form Filler</p>
-      <p class="hint">อ่านและตรวจการจับคู่เฉพาะหน้านี้ · กรอกด้วยกฎที่บันทึก · ไม่เขียนทับคำตอบเดิม · ปุ่มใน popup ไม่กด Next · ไม่กด Submit / ส่ง</p>
+      <p class="hint">อ่านและตรวจการจับคู่เฉพาะหน้านี้ · กรอกด้วยกฎที่บันทึกในชุดที่เลือก · ไม่เขียนทับคำตอบเดิม · ปุ่มใน popup ไม่กด Next · ไม่กด Submit / ส่ง</p>
       <fieldset class="shortcut-options" aria-describedby="shortcut-help">
-        <legend>Next เฉพาะคีย์ลัดกรอกฟอร์ม</legend>
+        <legend>Next เฉพาะคีย์ลัดกรอกฟอร์ม · ใช้ร่วมกันทุกชุด</legend>
         <label><input id="auto-next" type="checkbox" disabled> กด Next อัตโนมัติเมื่อกรอกครบ</label>
         <label><input id="allow-incomplete" type="checkbox" disabled> อนุญาต Next แม้ยังกรอกไม่ครบ</label>
         <p id="shortcut-help" class="hint">คีย์ลัดแต่ละครั้งลองกด Next / ถัดไปได้ 1 ครั้ง เฉพาะหน้านี้ ไม่กรอกหน้าถัดไปและไม่กด Submit / ส่ง · นับทุกคำถามที่มองเห็น รวมข้อไม่บังคับและคำตอบเดิม/กรอกเอง · ช่องที่ตรวจไม่ได้ถือว่ายังไม่ครบ · แม้อนุญาตข้อไม่ครบ ฟอร์มและเบราว์เซอร์ยังตรวจคำตอบที่บังคับตามปกติ</p>
@@ -75,11 +89,11 @@
       <ol id="rule-list"></ol>
     </section>
     <details id="advanced"><summary>ขั้นสูง: JSON / นำเข้า–ส่งออก</summary>
-      <label for="rules">JSON array · pattern, flags, value</label>
+      <label for="rules">JSON array ของชุดที่เลือกเท่านั้น · pattern, flags, value</label>
       <textarea id="rules" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="rules-help" disabled></textarea>
-      <p id="rules-help" class="hint">ใช้ regex โดยไม่ใส่ / ครอบ · flags เริ่มต้น iu · checkbox ใช้ ["ตัวเลือก A", "ตัวเลือก B"] · วันที่ใช้ {"type":"date","iso":"2000-02-29","textCalendar":"buddhist","textFormat":"thai-long"} · textCalendar: buddhist หรือ gregorian · textFormat: numeric, thai-long, thai-short (ละได้ ใช้ numeric) · บันทึกหรือนำเข้าจะแทนกฎทั้งชุด</p>
+      <p id="rules-help" class="hint">ใช้ regex โดยไม่ใส่ / ครอบ · flags เริ่มต้น iu · checkbox ใช้ ["ตัวเลือก A", "ตัวเลือก B"] · วันที่ใช้ {"type":"date","iso":"2000-02-29","textCalendar":"buddhist","textFormat":"thai-long"} · textCalendar: buddhist หรือ gregorian · textFormat: numeric, thai-long, thai-short (ละได้ ใช้ numeric) · บันทึกหรือนำเข้าจะแทนกฎเฉพาะชุดที่เลือก · ส่งออกเฉพาะชุดนี้ ไม่รวมชื่อชุดหรือการตั้งค่า Next</p>
       <div class="button-row"><button id="save" class="primary" disabled>บันทึก JSON</button><button id="import-text" disabled>นำเข้า JSON ในช่อง</button><button id="json-cancel" disabled>ยกเลิกแก้ JSON</button></div>
-      <div class="button-row secondary-row"><button id="import-file" disabled>นำเข้าไฟล์ JSON</button><button id="export" disabled>ส่งออกกฎที่บันทึก</button><input id="file" type="file" accept=".json,application/json" hidden></div>
+      <div class="button-row secondary-row"><button id="import-file" disabled>นำเข้าไฟล์ JSON</button><button id="export" disabled>ส่งออกชุดที่เลือก</button><input id="file" type="file" accept=".json,application/json" hidden></div>
     </details>
     <section aria-labelledby="results-title"><div class="section-title"><h2 id="results-title">ผลล่าสุดของแท็บนี้</h2><span id="run-time" class="hint"></span></div><p id="summary" role="status">ยังไม่มีผลการทำงาน</p><p id="navigation-result" role="status" aria-live="polite"></p><ol id="results"></ol></section>
     <details><summary>ตัวอย่างและข้อควรรู้</summary>

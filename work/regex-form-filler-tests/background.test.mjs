@@ -10,7 +10,7 @@ const rules = [{ pattern: '^ชื่อจริง$', flags: 'iu', value: 'ท
 let onMessage, onCommand, onRemoved, reportArrived;
 let session = {};
 const injections = [], removed = [], created = [], badges = [];
-let matcherFailure, shortcutOptions, applyCode, applyDiagnostic, failOperation;
+let presetState, onCollect, matcherFailure, shortcutOptions, applyCode, applyDiagnostic, failOperation;
 globalThis.chrome = {
   runtime: { id: 'synthetic', getManifest: () => ({ version: '9.8.7' }), getURL: path => extension + path, onMessage: { addListener: fn => { onMessage = fn; } } },
   commands: { onCommand: { addListener: fn => { onCommand = fn; } } },
@@ -31,7 +31,7 @@ globalThis.chrome = {
     remove: async id => { removed.push(id); }, onRemoved: { addListener: fn => { onRemoved = fn; } }
   },
   storage: {
-    local: { get: async () => ({ rules, shortcutOptions }) },
+    local: { get: async () => ({ rules, shortcutOptions, ...(presetState === undefined ? {} : { presetState }) }) },
     session: {
       set: async value => { Object.assign(session, value); reportArrived?.(value); },
       remove: async key => { delete session[key]; }
@@ -43,6 +43,7 @@ globalThis.chrome = {
     assert.equal(request.func, formDOM);
     assert.equal(request.world, 'ISOLATED');
     const [operation, payload] = request.args;
+    if (operation === 'collect') onCollect?.();
     if (operation === failOperation) throw new Error('synthetic injection failure');
     const result = operation === 'collect' ? ['2. ชื่อจริง'] : operation === 'apply' ?
       [{ label: '2. ชื่อจริง', rules: payload.jobs[0].rules, code: applyCode || (payload.dryRun ? 'ready' : 'filled'), diagnostic: applyDiagnostic, privateDetail: 'PRIVATE answer.pdf' }] : operation === 'advance' ? { code: 'attempted' } : undefined;
@@ -53,7 +54,7 @@ const { runCurrentTab } = await import('../../outputs/regex-form-filler/backgrou
 function send(message, sender = { id: 'synthetic', url: extension + 'popup.html' }) {
   return new Promise(resolve => { if (onMessage(message, sender, resolve) !== true) resolve(undefined); });
 }
-function reset() { injections.length = removed.length = created.length = badges.length = 0; session = {}; matcherFailure = undefined; reportArrived = undefined; shortcutOptions = undefined; applyCode = undefined; applyDiagnostic = undefined; failOperation = undefined; }
+function reset() { presetState = undefined; onCollect = undefined; injections.length = removed.length = created.length = badges.length = 0; session = {}; matcherFailure = undefined; reportArrived = undefined; shortcutOptions = undefined; applyCode = undefined; applyDiagnostic = undefined; failOperation = undefined; }
 
 test('popup and shortcut share saved-rule dispatch, isolated injection, worker host and sanitized reports', async () => {
   reset();
@@ -248,4 +249,28 @@ test('file diagnostics: session retains only allowlisted strings and records run
   reset(); failOperation = 'apply';
   const failed = await runCurrentTab(false);
   assert.equal(failed.ok, false); assert.equal(failed.version, '9.8.7'); assert.ok(Number.isFinite(failed.time));
+});
+
+test('presets: popup/shortcut resolve selected rules once per run, holding a detached snapshot', async () => {
+  for (const keyboard of [false, true]) {
+    reset();
+    presetState = { activeId: 'second', presets: [
+      { id: 'first', name: 'First', rules },
+      { id: 'second', name: 'Second', rules: [{ pattern: '^ชื่อจริง$', flags: 'iu', value: ['snapshot'] }] }
+    ] };
+    onCollect = () => { presetState.presets[1].rules[0].value[0] = 'changed'; presetState.activeId = 'first'; };
+    const result = keyboard ? await shortcut() : await send({ type: 'run', dryRun: false });
+    assert.equal(result.ok, true);
+    assert.deepEqual(injections.find(x => x.args[0] === 'apply').args[1].jobs[0].value, ['snapshot']);
+    onCollect = undefined; injections.length = 0;
+    await runCurrentTab(false);
+    assert.equal(injections.find(x => x.args[0] === 'apply').args[1].jobs[0].value, 'ทดสอบ');
+  }
+});
+
+test('presets: malformed state never falls back to legacy fill', async () => {
+  reset(); presetState = { activeId: 'unknown', presets: [] };
+  const result = await runCurrentTab(false);
+  assert.equal(result.ok, false);
+  assert.equal(injections.some(x => ['collect', 'apply'].includes(x.args[0])), false);
 });

@@ -1,4 +1,5 @@
-import { FILE_DIAGNOSTICS, isFormUrl, normalizeLabel, normalizeShortcutOptions, NAVIGATION_STATUS, validateRules } from './core.js';
+import { FILE_DIAGNOSTICS, isFormUrl, normalizeLabel, normalizeShortcutOptions, NAVIGATION_STATUS } from './core.js';
+import { activePreset, readPresetState } from './presets.js';
 import { formDOM } from './form-dom.js';
 import { prepareFiles } from './file-store.js';
 
@@ -61,10 +62,10 @@ export async function runCurrentTab(dryRun = false, commandTab, source) {
   };
   try {
     if (!isFormUrl(tab.url)) throw new Error('ใช้ได้เฉพาะหน้า Google Forms สำหรับตอบหรือดูตัวอย่าง ไม่ใช่หน้าแก้ไขหรือผลลัพธ์');
-    const { rules: saved = [], shortcutOptions } = await chrome.storage.local.get(['rules', 'shortcutOptions']);
-    const options = normalizeShortcutOptions(shortcutOptions);
+    const stored = await chrome.storage.local.get(['presetState', 'rules', 'shortcutOptions']);
+    const options = normalizeShortcutOptions(stored.shortcutOptions);
     const allowAdvance = source === keyboardSource && !dryRun && options.autoNext;
-    const rules = validateRules(saved);
+    const rules = activePreset(readPresetState(stored)).rules;
     if (!rules.length && !dryRun) throw new Error('ยังไม่มีกฎที่บันทึกไว้ เปิดส่วนขยายแล้วบันทึกกฎก่อน');
     const token = crypto.randomUUID();
     const labels = await inject('collect', { token, allowAdvance });

@@ -73,3 +73,11 @@ pre { padding: 10px; border-radius: 8px; background: #e7eee9; }
 .shortcut-options input { flex-shrink: 0; }
 #shortcut-status, #navigation-result { font-size: 12px; }
 #shortcut-status:empty, #navigation-result:empty { display: none; }
+
+.preset-panel { background: #e5efea; border: 1px solid #c7d8ce; border-radius: 12px; padding: 12px; }
+.preset-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+.preset-panel .hint { margin: 8px 0 0; }
+#preset-status { font-size: 12px; overflow-wrap: anywhere; }
+#preset-status:empty { display: none; }
+#preset-delete-confirmation { margin-top: 10px; padding-top: 10px; border-top: 1px solid #c7d8ce; }
+#preset-delete-warning { margin: 0; font-size: 12px; overflow-wrap: anywhere; }

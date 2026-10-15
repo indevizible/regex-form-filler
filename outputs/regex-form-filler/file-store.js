@@ -52,11 +52,11 @@ export async function deleteFiles(ids) {
   if (ids.length) await transaction('readwrite', store => { for (const id of ids) store.delete(id); });
 }
 
-export async function saveRulesWithFiles(previous, input, staged, writeRules) {
+export async function saveRulesWithFiles(previous, input, staged, writeRules, retainedRules = []) {
   const rules = validateRules(input);
   const ids = list => new Set(list.filter(rule => rule.value?.type === 'file').map(rule => rule.value.fileId));
-  const kept = ids(rules);
-  if (staged && !kept.has(staged.ref.fileId)) throw missingError();
+  const kept = ids([...rules, ...retainedRules]);
+  if (staged && !ids(rules).has(staged.ref.fileId)) throw missingError();
   if (staged) await storeFile(staged.ref, staged.blob);
   try { await writeRules(rules); }
   catch {
