@@ -7,7 +7,7 @@ const $ = id => document.getElementById(id);
 const key = 'regex-form-filler-synthetic-file-fixture-v1.5';
 let rules = validateRules(JSON.parse(localStorage.getItem(key) || '[]'));
 let draft, activeList, restoreTimer, running = false;
-const twoQuestions = () => ['two-files', 'inner-progress-two'].includes($('scenario').value) || $('scenario').value.startsWith('sequence-');
+const twoQuestions = () => ['two-files', 'inner-progress-two', 'settling-two', 'removed-tombstone'].includes($('scenario').value) || $('scenario').value.startsWith('sequence-');
 let lastFrame, diagnosticTimer, diagnosticStart, diagnosticTick, diagnosticPolls = 0, diagnosticGap = 0, fixturePhase = 'idle';
 // Fixture-only observations of our own iframe DOM; never read file contents or picker query parameters.
 export function readPickerDiagnostics(frame) {
@@ -86,7 +86,13 @@ function resetPage() {
   activeList = $('selected-files');
   $('second-question').hidden = !twoQuestions();
   Object.keys(counters).forEach(key => { counters[key] = 0; });
-  if (['prefilled', 'sequence-preserved'].includes($('scenario').value)) attach('already-attached.pdf');
+  if (['prefilled', 'sequence-preserved', 'removed-tombstone'].includes($('scenario').value)) attach('already-attached.pdf');
+  if ($('scenario').value === 'removed-tombstone') {
+    const removed = document.createElement('div');
+    for (const [key, value] of Object.entries({ jscontroller: 'By0w6', jsaction: 'mouseover:eGiyHb; click:eGiyHb; focus:eGiyHb; touchstart:eGiyHb;',
+      'data-tooltip': 'SECOND-ONLY.pdf', role: 'listitem', 'data-vertical-offset': '-22', class: 'yP1fJf' })) removed.setAttribute(key, value);
+    $('selected-second').append(removed);
+  }
   for (const [buttonId, listId] of [['add-file', 'selected-files'], ['add-second', 'selected-second']]) $(buttonId).addEventListener('click', () => {
     activeList = $(listId);
     $('form-background').setAttribute('aria-hidden', 'true'); counters.masks++;
@@ -118,7 +124,7 @@ window.fileFixture = {
     const mode = $('scenario').value, list = activeList;
     if (['hide-first', 'inner-progress-two', 'sequence-close-first', 'sequence-preserved'].includes(mode)) { closePicker(); setTimeout(() => attach(name, list), 700); }
     else {
-      if (!list.children.length) attach(name, list);
+      if (!list.children.length || mode === 'removed-tombstone' && list === $('selected-second')) attach(name, list);
       if (['name-first', 'sequence-name-first'].includes(mode)) setTimeout(closePicker, 700);
       else if (mode !== 'name-open') closePicker();
     }
@@ -199,8 +205,8 @@ async function run(dryRun, keyboard) {
     fixturePhase = `apply returned: ${rows[0]?.code}`;
     const navigation = keyboard ? await formDOM('advance', { url, token, allowIncomplete: true }) : null;
     $('report').textContent = JSON.stringify({ rows, navigation }, null, 2);
-    const expected = previous.map(items => items.length ? 'preserved' : dryRun ? 'ready' :
-      ['success', 'two-files', 'inner-progress-two', 'confirm', 'hide-first', 'name-first'].includes(mode) || mode.startsWith('sequence-') ? 'filled' : ['reject', 'unknown'].includes(mode) ? 'file-manual' : mode === 'wrong' ? 'pending' : null);
+    const expected = previous.map((items, i) => items.length && !(mode === 'removed-tombstone' && i === 1 && items.length === 1) ? 'preserved' : dryRun ? 'ready' :
+      ['success', 'two-files', 'inner-progress-two', 'settling-two', 'removed-tombstone', 'confirm', 'hide-first', 'name-first'].includes(mode) || mode.startsWith('sequence-') ? 'filled' : ['reject', 'unknown'].includes(mode) ? 'file-manual' : mode === 'wrong' ? 'pending' : null);
     const check = (ok, label) => {
       const li = document.createElement('li'); li.textContent = `${ok ? 'PASS' : 'FAIL'} · ${label}`; $('assertions').append(li);
       if (!ok) throw new Error(label);
@@ -208,7 +214,7 @@ async function run(dryRun, keyboard) {
     const count = lists.length, filled = expected.filter(code => code === 'filled').length;
     check(labels.length === count && rows.length === count, 'Only file questions counted: wrapper, static section and nested attachment rows excluded');
     check(rows.every((row, i) => expected[i] ? row.code === expected[i] : ['filled', 'pending', 'timeout'].includes(row.code)), 'Expected attachment status for every question');
-    check(rows.every((row, i) => row.code !== 'filled' || lists[i].children.length === 1 && lists[i].querySelector('span')?.textContent === jobs[i].value.name), 'Each new attachment has its own matched exact filename');
+    check(rows.every((row, i) => row.code !== 'filled' || lists[i].children.length === previous[i].length + 1 && lists[i].querySelector('span')?.textContent === jobs[i].value.name), 'Each new attachment has its own matched exact filename');
     check(previous.every((items, i) => items.every((item, j) => lists[i].children[j] === item)), 'Existing attachments keep their original nodes');
     check(!rows.some(row => row.code === 'filled') || !$('picker-modal') && !$('form-background').hasAttribute('aria-hidden'), 'Filled requires picker closed, background restored and exact outer filename');
     check(counters.submit === 0 && counters.submitEvents === 0, 'No Submit click or form submit event');

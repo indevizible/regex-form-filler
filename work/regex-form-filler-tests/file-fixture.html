@@ -14,6 +14,9 @@
     <select id="scenario">
       <option value="success">Success: whole-form ARIA mask + async attachment + auto close</option>
       <option value="two-files">Success: two consecutive masked file uploads</option>
+      <option value="settling-two">Two files: initial input replaced after 1800ms of quiet</option>
+      <option value="no-replacement">No input replacement: bounded manual handling, no handoff</option>
+      <option value="removed-tombstone">Preserve first attachment; empty removed-file leaf in second question</option>
       <option value="inner-progress-two">Two files: sibling upload-progress dialog masks original inner picker</option>
       <option value="sequence-name-first">Two files: remove input, filename → close → async ARIA restore</option>
       <option value="sequence-close-first">Two files: remove input, close → filename → async ARIA restore</option>
@@ -30,6 +33,7 @@
     </select>
     <p>Every picker masks the original form wrapper with aria-hidden=true. The sequence scenarios remove the input after change and restore ARIA one second after close. Save the distinct synthetic pair first; one Fill should attach both, and keyboard-style fill should then attempt Next once. Original question nodes stay connected.</p>
     <p>inner-progress-two reproduces the observed Google lifecycle: a new sibling dialog masks the original inner wrapper for 700ms, then disappears before the picker closes and the exact attachment arrives. The iframe, document and input remain retained. Use Save two distinct synthetic files; no disk file is needed.</p>
+    <p>Pickers replace their initial input after 600ms; settling-two delays replacement to 1800ms and discards any provisional upload completion. No-replacement leaves the initial input untouched and must never receive a handoff. removed-tombstone preserves the first attachment and the observed empty removed-file leaf. Pair scenarios use Save two distinct synthetic files. These are synthetic regressions, not live Google verification.</p>
     <div class="buttons"><button id="dry" type="button">Dry run</button><button id="fill-file" type="button">Fill only</button><button id="keyboard" type="button">Keyboard-style fill + Next</button></div>
     <p>The keyboard-style button requests Next with allowIncomplete=true to prove upload uncertainty still blocks it. It is not a real extension shortcut.</p>
     <div class="buttons"><button id="complete" type="button" disabled>Complete pending upload</button><button id="cancel-picker" type="button" disabled>Cancel picker</button><button id="reset-page" type="button">Reset page</button><button id="delete-copy" type="button">Delete fixture copy</button></div>

@@ -509,14 +509,20 @@ test('file diagnostics: popup shows Thai reason, stable code, loaded version and
   state.report = { ok: true, version: '1.5.3', time, rows: [
     { label: 'Upload', rules: [0], code: 'pending', diagnostic: 'picker-document-changed' },
     { label: 'Second', rules: [1], code: 'pending', diagnostic: 'previous-unconfirmed' },
+    { label: 'Discovery', rules: [2], code: 'pending', diagnostic: 'picker-discovery-timeout' },
+    { label: 'Settling', rules: [3], code: 'pending', diagnostic: 'picker-settling-timeout' },
+    { label: 'Initialization', rules: [4], code: 'timeout', diagnostic: 'picker-initialization-not-observed' },
     ...['<img src=x onerror=PRIVATE>', 'constructor', ['overall-timeout'], undefined].map(diagnostic => ({ label: 'Legacy', rules: [], code: 'pending', diagnostic }))
   ] };
   await fire('fill');
   const details = element('results').children.map(item => item.children[1]);
   assert.match(details[0].textContent, /เอกสาร.*picker.*เปลี่ยน.*\(picker-document-changed\)/);
   assert.match(details[1].textContent, /ไฟล์ก่อนหน้า.*\(previous-unconfirmed\)/);
+  assert.match(details[2].textContent, /ครบเวลา.*ค้นหา.*\(picker-discovery-timeout\)/);
+  assert.match(details[3].textContent, /ครบเวลา.*นิ่ง.*\(picker-settling-timeout\)/);
+  assert.match(details[4].textContent, /ไม่พบ.*เปลี่ยนช่องไฟล์.*ยังไม่ได้ส่งไฟล์.*\(picker-initialization-not-observed\)/);
   assert.equal(details[0].children.length, 0);
-  assert.ok(details.slice(2).every(detail => detail.textContent === details.at(-1).textContent));
+  assert.ok(details.slice(5).every(detail => detail.textContent === details.at(-1).textContent));
   assert.match(element('run-time').textContent, /1\.5\.3/);
   assert.ok(element('run-time').textContent.includes(new Date(time).toLocaleString('th-TH')));
   state.report = { ok: true, rows: [{ label: 'Legacy', rules: [], code: 'pending' }] };

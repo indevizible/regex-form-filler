@@ -235,7 +235,7 @@ test('file: uncertain upload rows block shortcut Next even with incomplete overr
 });
 
 test('file diagnostics: session retains only allowlisted strings and records runtime version and time', async () => {
-  const allowed = ['file-preflight', 'file-data', 'picker-discovery', 'file-handoff', 'upload-completion', 'unexpected-ui', 'picker-document-changed', 'picker-ui-changed', 'owner-form-changed', 'selection-not-exact', 'close-grace-expired', 'overall-timeout', 'previous-unconfirmed'];
+  const allowed = ['file-preflight', 'file-data', 'picker-discovery', 'picker-discovery-timeout', 'picker-settling-timeout', 'picker-initialization-not-observed', 'file-handoff', 'upload-completion', 'unexpected-ui', 'picker-document-changed', 'picker-ui-changed', 'owner-form-changed', 'selection-not-exact', 'close-grace-expired', 'overall-timeout', 'previous-unconfirmed'];
   for (const diagnostic of [...allowed, undefined, null, '', 'PRIVATE answer.pdf', 'https://example.test/?auth=PRIVATE', '__proto__', 'constructor', ['overall-timeout'], { reason: 'overall-timeout', answer: 'PRIVATE' }]) {
     reset(); applyCode = 'pending'; applyDiagnostic = diagnostic;
     const start = Date.now();

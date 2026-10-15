@@ -62,7 +62,13 @@ export async function formDOM(operation, payload) {
     ['Add file', 'เพิ่มไฟล์'].includes(text(button.textContent)) &&
     (!button.getAttribute('aria-label') || text(button.getAttribute('aria-label')) === text(button.textContent)) &&
     !(button.matches('button') && button.type !== 'button');
-  const hasSelection = list => !!list.children.length || !!text(list.textContent);
+  // Google leaves this empty tooltip leaf after Remove file; unknown or interactive children still count.
+  const removedFile = item => item.matches('div[role="listitem"][data-tooltip][jscontroller="By0w6"]') &&
+    !item.childNodes.length && !!text(item.getAttribute('data-tooltip')) &&
+    item.getAttribute('jsaction') === 'mouseover:eGiyHb; click:eGiyHb; focus:eGiyHb; touchstart:eGiyHb;' &&
+    item.getAttributeNames().every(name => ['role', 'data-tooltip', 'jscontroller', 'jsaction', 'data-vertical-offset', 'class'].includes(name));
+  const hasSelection = list => !!text(list.textContent) || !!list.closest('[aria-busy="true"]') ||
+    [...list.children].some(item => !removedFile(item));
   const attachmentItems = (list, isVisible = visible) => [...list.querySelectorAll('[role="listitem"]')].filter(item => item.closest(fileListSelector) === list && isVisible(item) &&
     !item.closest('[aria-busy="true"]') && !item.querySelector('[role="progressbar"], [aria-busy="true"]'));
   const exactFilename = (item, name, isVisible = visible) => [item, ...item.querySelectorAll('*')].some(node => isVisible(node) &&
@@ -248,18 +254,17 @@ export async function formDOM(operation, payload) {
     const oldDialogs = [...document.querySelectorAll(modalSelector)];
     const oldVisibleFrames = oldFrames.filter(visible);
     const end = Math.min(deadline, Date.now() + 60000);
-    const pickerEnd = Math.min(end, Date.now() + 10000);
     if (!stable() || hasSelection(list)) return 'stale';
     buttons[0].click();
-    let frame, picker, win, input, pickerDialog, outerDialog;
-    while (Date.now() < pickerEnd) {
+    let frame, picker, win, input, pickerDialog, outerDialog, replacementObserved = false;
+    while (Date.now() < end) {
       await pause(150);
-      if (Date.now() >= end) return 'timeout';
-      if (Date.now() >= pickerEnd) return 'file-manual';
+      if (Date.now() >= end) return fail('timeout', 'picker-discovery-timeout');
       if (hasSelection(list)) return 'pending';
       const dialogs = modals();
       const frames = [...document.querySelectorAll('iframe')].filter(node => visible(node) && !oldFrames.includes(node));
       if (frames.length > 1 || dialogs.length > 1) return 'file-manual';
+      if (frame && (frames[0] !== frame || dialogs[0] !== outerDialog)) return 'stale';
       if (!frames.length || !dialogs.length) {
         if (!stable()) return 'stale';
         continue;
@@ -272,26 +277,36 @@ export async function formDOM(operation, payload) {
         // The background restricts the outer page to docs.google.com; never inspect picker query/auth data.
         const source = new URL(frame.src);
         if (source.origin !== location.origin || source.pathname !== '/picker' || frame.hasAttribute('sandbox')) return 'file-manual';
-        picker = frame.contentDocument;
+        const currentDocument = frame.contentDocument;
+        if (input && currentDocument !== picker) return 'stale';
+        picker = currentDocument;
         win = picker?.defaultView;
         if (!picker || !win) return 'file-manual';
-        const actual = new URL(picker.URL);
-        if (actual.origin !== location.origin || actual.pathname !== '/picker') continue;
         if (!stable(pickerVisible)) return 'stale';
-        if (picker.readyState !== 'complete') continue; // Parsed inputs can precede deferred module handlers.
+        const actual = new URL(picker.URL);
+        if (actual.origin !== location.origin || actual.pathname !== '/picker') {
+          if (input) return 'stale';
+          continue;
+        }
         const dialogsInside = [...picker.querySelectorAll('[role="dialog"]')].filter(visible);
+        if (input && !same(dialogsInside, [pickerDialog])) return 'stale';
         if (!dialogsInside.length) continue;
         if (dialogsInside.length !== 1 || !namedInsertDialog(dialogsInside[0])) return 'file-manual';
         pickerDialog = dialogsInside[0];
         const inputs = [...picker.querySelectorAll('input[type="file"]')];
-        if (!inputs.length) continue;
-        if (inputs.length !== 1) return 'file-manual';
+        if (!inputs.length && !input) continue;
+        if (inputs.length !== 1 || !inputs[0].isConnected || !pickerDialog.contains(inputs[0])) return 'file-manual';
+        if (input?.files?.length || inputs[0].files?.length) return 'pending';
+        if (input && input !== inputs[0]) {
+          if (input.isConnected) return 'file-manual';
+          replacementObserved = true;
+        }
         input = inputs[0];
-        if (!pickerDialog.contains(input)) return 'file-manual';
-        break;
+        // Observe parsed generations while loading, but never settle or hand off before module loading completes.
+        if (picker.readyState === 'complete') break;
       } catch { return 'file-manual'; }
     }
-    if (!input) return 'file-manual';
+    if (!input) return fail('timeout', 'picker-discovery-timeout');
     const pickerDocumentStable = () => (!frame.isConnected || frame.contentDocument === picker) && picker.readyState === 'complete' &&
       new URL(frame.src).origin === location.origin && new URL(frame.src).pathname === '/picker' &&
       new URL(picker.URL).origin === location.origin && new URL(picker.URL).pathname === '/picker' &&
@@ -303,11 +318,41 @@ export async function formDOM(operation, payload) {
       pickerDialog.isConnected && namedInsertDialog(pickerDialog) &&
       same([...picker.querySelectorAll('[role="dialog"]')].filter(visible), [pickerDialog]) &&
       (!requireInput || input.isConnected && pickerDialog.contains(input) && same([...picker.querySelectorAll('input[type="file"]')], [input]));
+    const pickerReady = () => {
+      const browse = [...pickerDialog.querySelectorAll('button, [role="button"]')].filter(button => visible(button) &&
+        text(button.textContent) === 'Browse' && (!button.getAttribute('aria-label') || text(button.getAttribute('aria-label')) === 'Browse'));
+      return browse.length === 1 && !blocked(browse[0]) && !input.disabled && !input.matches(':disabled') &&
+        !input.closest('[aria-disabled="true"]') && !uploading() &&
+        ![...picker.querySelectorAll('[role="progressbar"], [aria-busy="true"]')].some(visible);
+    };
+    let readySince;
+    const observer = new win.MutationObserver(() => { readySince = undefined; });
+    try {
+      for (const root of [picker.documentElement, outerDialog]) observer.observe(root, { subtree: true, childList: true, attributes: true, characterData: true });
+      // shortcut: only observed two-generation pickers are supported; other layouts stay manual until separately verified.
+      while (Date.now() < end) {
+        if (!pickerStable(false) || !stable(pickerVisible)) return 'stale';
+        if (hasSelection(list)) return 'pending';
+        const inputs = [...picker.querySelectorAll('input[type="file"]')];
+        if (inputs.length !== 1 || !inputs[0].isConnected || !pickerDialog.contains(inputs[0])) return 'file-manual';
+        if (input.files?.length || inputs[0].files?.length) return 'pending';
+        // Google replaces its initializing input; reacquire only before the first assignment and restart settling.
+        if (input !== inputs[0]) {
+          if (input.isConnected) return 'file-manual';
+          input = inputs[0]; replacementObserved = true; readySince = undefined;
+        }
+        if (observer.takeRecords().length || !replacementObserved || !pickerReady()) readySince = undefined;
+        else readySince ??= Date.now();
+        if (readySince !== undefined && Date.now() - readySince >= 1000) break;
+        await pause(150);
+      }
+      if (Date.now() >= end) return fail('timeout', replacementObserved ? 'picker-settling-timeout' : 'picker-initialization-not-observed');
+    } finally { observer.disconnect(); }
     row.diagnostic = 'file-handoff';
     const accept = input.accept.split(',').map(token => token.trim().toLowerCase()).filter(Boolean);
     const accepted = !accept.length || accept.some(token => token.startsWith('.') ? value.name.toLowerCase().endsWith(token) :
       token.endsWith('/*') ? !!value.mime && value.mime.startsWith(token.slice(0, -1)) : token === value.mime);
-    if (!pickerStable() || !stable(pickerVisible) || hasSelection(list)) return 'stale';
+    if (!pickerStable() || !pickerReady() || !stable(pickerVisible) || hasSelection(list)) return 'stale';
     if (Date.now() >= end) return 'timeout';
     if (!accepted || input.multiple || input.disabled || input.matches(':disabled') ||
         input.closest('[aria-disabled="true"]') || input.files?.length || !win.File || !win.DataTransfer) return 'file-manual';
@@ -497,7 +542,7 @@ export async function formDOM(operation, payload) {
     }
     if (job?.value?.type === 'file' && !['filled', 'preserved', 'ready'].includes(code)) {
       if (uncertainFile) row.diagnostic = 'previous-unconfirmed';
-      else if (code === 'timeout') row.diagnostic = 'overall-timeout';
+      else if (code === 'timeout' && (Date.now() >= deadline || !['picker-discovery-timeout', 'picker-settling-timeout', 'picker-initialization-not-observed'].includes(row.diagnostic))) row.diagnostic = 'overall-timeout';
       uncertainFile = true;
     } else delete row.diagnostic;
     row.code = code;

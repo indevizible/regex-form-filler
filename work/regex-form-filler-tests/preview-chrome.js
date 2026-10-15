@@ -43,7 +43,7 @@
     },
     commands: { getAll: async () => [{ name: 'fill-form', shortcut: 'Option+Shift+F' }] },
     tabs: { query: async () => [{ id: 7 }] },
-    runtime: { getManifest: () => ({ version: '1.6.1' }), sendMessage: async ({ type, dryRun }) => {
+    runtime: { getManifest: () => ({ version: '1.6.3' }), sendMessage: async ({ type, dryRun }) => {
       if (type !== 'run') throw new Error('Preview supports only the existing run message');
       let report;
       try {

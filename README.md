@@ -2,17 +2,17 @@
 
 ส่วนขยายสำหรับ Opera และ Chrome ช่วยกรอก Google Forms จากชื่อคำถาม มี UI ภาษาไทยสำหรับสร้างกฎแบบตรงชื่อ มีคำที่ระบุ หรือ Regex รองรับข้อความ ตัวเลือก วันที่ พ.ศ./ค.ศ. และไฟล์แนบในรูปแบบที่รองรับ
 
-**เวอร์ชัน 1.6.1** ปรับเฉพาะไอคอนให้ใหญ่และชัดขึ้นบนแถบเครื่องมือ · รุ่นนี้ยังไม่ได้ส่ง Store
+**เวอร์ชัน 1.6.3** ปรับการรอหน้าต่างเลือกไฟล์ของ Google Forms ให้ใช้เวลางานเดิม 60 วินาทีต่อไฟล์ ภายใต้เพดานรวม 180 วินาที และรอการเปลี่ยนช่องรับไฟล์ก่อนส่งไฟล์ตามลำดับครั้งเดียวต่อไฟล์
 
-ประวัติ **v1.5.6** · Chrome Web Store: ส่งแล้วและรอรีวิว ณ 14 ตุลาคม 2026 · Opera Add-ons: ยังไม่ได้ส่ง ณ วันดังกล่าว
+Chrome Web Store: ส่ง **v1.6.3** แล้วแบบ **Unlisted** และรอรีวิว ณ 16 ตุลาคม 2026 · Opera Add-ons: ยังไม่ได้ส่ง
 
-[ดาวน์โหลด v1.6.1](https://github.com/indevizible/regex-form-filler/releases/tag/v1.6.1) · [Privacy policy](https://indevizible.github.io/regex-form-filler-privacy/) · [คู่มือฉบับเต็ม](outputs/regex-form-filler/README.md)
+[ดาวน์โหลด v1.6.3](https://github.com/indevizible/regex-form-filler/releases/tag/v1.6.3) · [Privacy policy](https://indevizible.github.io/regex-form-filler-privacy/) · [คู่มือฉบับเต็ม](outputs/regex-form-filler/README.md)
 
 ![ชุดกฎ preset ในหน้าทดสอบ Opera](assets/presets-preview.png)
 
 ## ติดตั้งจาก ZIP
 
-1. ดาวน์โหลด `regex-form-filler-opera-v1.6.1.zip` จาก Releases แล้วแตกไฟล์
+1. ดาวน์โหลด `regex-form-filler-opera-v1.6.3.zip` จาก Releases แล้วแตกไฟล์ (ใช้กับ Chrome ได้ด้วย)
 2. เปิด `opera://extensions` หรือ `chrome://extensions` และเปิด Developer mode
 3. กด Load unpacked แล้วเลือกโฟลเดอร์ `regex-form-filler` ที่มี `manifest.json`
 4. เปิด Google Forms หน้าตอบ กดส่วนขยายเพื่อเพิ่มกฎ และกดกรอกหน้านี้
@@ -21,7 +21,15 @@
 
 ## อัปเดตและข้อมูลที่เก็บไว้
 
-รุ่น 1.6.1 ขยายรูปเอกสารสีมิ้นต์พร้อมเครื่องหมายถูกภายในไอคอนเดิม โดยลดพื้นที่ว่างรอบภาพ ไม่มีการเปลี่ยนฟีเจอร์ พฤติกรรม สิทธิ์ คีย์ลัด หรือข้อมูลที่เก็บไว้
+รุ่น 1.6.3 ยกเลิกเพดานค้นหา picker แยก 10 วินาที โดยให้การค้นหา การรอนิ่ง และการยืนยันไฟล์ใช้เวลาร่วมกันไม่เกิน 60 วินาทีต่อไฟล์และ 180 วินาทีต่อครั้ง รอ document โหลดครบ พร้อม Browse และไม่มีความคืบหน้า จากนั้นต้องนิ่งอย่างน้อย 1 วินาทีก่อนส่งไฟล์ครั้งเดียว การเปลี่ยน UI เริ่มนับเวลานิ่งใหม่ภายในเพดานเดิม และหยุดเมื่อยกเลิกหรือเจ้าของ picker/ฟอร์มเปลี่ยน ยังเก็บกฎ empty tooltip leaf และเงื่อนไขยืนยันไฟล์/Next เดิม รหัส `picker-discovery-timeout` และ `picker-settling-timeout` แยกช่วงที่หมดเวลาก่อนส่งไฟล์ โดยไม่เพิ่มข้อมูลส่วนตัวในรายงาน
+
+รองรับเฉพาะรูปแบบที่สังเกตเห็นช่องไฟล์แรกถูกแทนด้วยช่องไฟล์ว่างใหม่เพียงช่องเดียวใน document/dialog เจ้าของเดิม เริ่มสังเกตระหว่าง loading/interactive เมื่อยืนยัน same-origin `/picker` จริงแล้ว แต่เริ่มรอนิ่งและส่งไฟล์ได้หลังโหลดครบเท่านั้น หากพลาดการเปลี่ยนช่องหรือเป็นรูปแบบอื่น จะไม่ส่งไฟล์และรายงาน `picker-initialization-not-observed` เมื่อหมดเวลา ให้เลือกเอง การสังเกตนี้ไม่ใช่สัญญาณยืนยันว่า controller ภายใน Google พร้อม และไม่มีการลองอัปโหลดซ้ำอัตโนมัติ
+
+หลักฐานล้มเหลวซ้ำของ 1.6.2 บนฟอร์มจริงยังคงเป็นหลักฐานประวัติ การทดสอบควบคุม network latency 12,000ms ยืนยันเพดานค้นหา 10 วินาทีหยุด picker ที่ยังโหลดก่อนส่งไฟล์ แต่ยังระบุสาเหตุแน่นอนของความล้มเหลวแบบไม่ throttle ก่อนหน้านั้นไม่ได้ ผล Node tests ไม่ใช่การตรวจรับส่วนขยาย 1.6.3 ที่ติดตั้งจริง และไม่ยืนยันว่าแก้ปัญหาที่เกิดเป็นครั้งคราวทั้งหมดแล้ว
+
+การตรวจ v1.6.3: Node tests ผ่าน 204/204 ข้อ พร้อม preview self-test และ diff check การเรียก shipping `formDOM` โดยตรงใน isolated context บนฟอร์มซ้อมจริงใน Opera อัปโหลด PDF ทดสอบสองไฟล์สำเร็จต่อเนื่องสองรอบปกติ (12.602 และ 9.916 วินาที) และรอบจำลอง network latency 12 วินาที (21.441 วินาที) ส่งไฟล์ครั้งเดียวต่อไฟล์ ไม่มี Next หรือ Submit ผลนี้ไม่ใช่การตรวจคีย์ลัดของส่วนขยาย v1.6.3 ที่ติดตั้งจริง และยังไม่ได้ทดสอบ Chrome, service-worker idle suspension หรือ auto-Next ในรุ่นนี้
+
+หลังผู้ใช้ Reload และยืนยันเวอร์ชัน 1.6.2 ใน native popup: Popup Fill แนบ `TEST-ONLY-2.pdf` ได้ 1/3 ข้อ จากนั้นเพิ่ม `TEST-ONLY-1.pdf` ด้วย native chooser ในชุด TEST ONLY เดิม บันทึก 2 กฎและทำให้ช่องไฟล์ทั้งสองว่าง กด **Option+Shift+F หนึ่งครั้ง** ได้ `filled/filled` 2/3 ข้อ เวลา 22:03:58 Asia/Bangkok วันที่ 15 ตุลาคม 2026 ลบเฉพาะไฟล์ที่สองแล้วกดคีย์ลัดหนึ่งครั้งได้ `preserved/filled` เวลา 22:04:41 เห็นชื่อไฟล์แนบตามผลทั้งสามครั้ง ไม่มี failure, Submit หรือการเปิด Next และไม่จับคู่ consent หลังตรวจนำออกเฉพาะไฟล์ทดสอบทั้งสองและคืนชุดเดิม 17 กฎเป็นชุดที่ใช้งาน ชุด TEST ONLY ยังอยู่และชุดส่วนตัวไม่เปลี่ยน ผลนี้ไม่ยืนยัน Chrome, service-worker idle suspension, auto-Next หรือความเข้ากันได้กับทุกฟอร์ม
 
 สำหรับ Load unpacked ให้คัดลอกไฟล์ใหม่ทับโฟลเดอร์เดิมแล้วกด Reload โดยไม่ถอนส่วนขยาย รุ่น 1.6.0 แสดงกฎเดิมเป็น **ค่าเริ่มต้น** พร้อมข้อมูลอ้างอิงไฟล์เดิม และบันทึกรูปแบบชุดกฎเมื่อแก้ไขครั้งแรก
 
@@ -35,7 +43,7 @@ JSON นำเข้า/ส่งออกยังเป็น array ของ�
 
 ## ซอร์สและการพัฒนา
 
-ไม่มีขั้นตอน compile หรือ dependency ที่ต้องติดตั้ง ไฟล์ HTML/CSS/JavaScript ใน `outputs/regex-form-filler/` คือซอร์ส 1.6.1 สำหรับ Load unpacked และการทดสอบ รุ่นนี้ยังไม่ได้ส่ง Store
+ไม่มีขั้นตอน compile หรือ dependency ที่ต้องติดตั้ง ไฟล์ HTML/CSS/JavaScript ใน `outputs/regex-form-filler/` คือซอร์ส v1.6.3 ไฟล์ runtime ใน ZIP ทั้งสองตรงกับซอร์สนี้ และ Chrome ZIP เป็นไฟล์เดียวกับที่ส่งเข้า Chrome Web Store
 
 - `outputs/regex-form-filler/` — ส่วนขยายและตัวอย่างกฎสังเคราะห์
 - `work/regex-form-filler-tests/` — ชุดทดสอบและหน้า preview เฉพาะพัฒนา
@@ -44,16 +52,16 @@ JSON นำเข้า/ส่งออกยังเป็น array ของ�
 ใช้ Node.js 22+ และ Python 3.9+ จาก repository root:
 
 ```sh
-node --test work/regex-form-filler-tests/*.test.mjs
+node --test --test-concurrency=1 work/regex-form-filler-tests/*.test.mjs
 python3 work/regex-form-filler-tests/preview-server.py --self-test
 ```
 
 [วิธีเปิด preview และ fixtures](work/regex-form-filler-tests/README.md)
 
-## ไฟล์ Release v1.6.1
+## ไฟล์ Release v1.6.3
 
-- `regex-form-filler-opera-v1.6.1.zip` — แตกไฟล์แล้วติดตั้งแบบ Load unpacked ได้ทั้ง Opera และ Chrome
-- `regex-form-filler-1.6.1-store.zip` — แพ็กเกจ 18 runtime files สำหรับส่ง Store มี manifest ที่ราก ZIP
+- `regex-form-filler-opera-v1.6.3.zip` — แตกไฟล์แล้วติดตั้งแบบ Load unpacked ได้ทั้ง Opera และ Chrome รวมคู่มือและตัวอย่างกฎสังเคราะห์
+- `regex-form-filler-chrome-v1.6.3.zip` — แพ็กเกจ 18 runtime files ที่ส่ง Chrome Web Store มี manifest ที่ราก ZIP
 - `SHA256SUMS.txt` — ค่า SHA-256 สำหรับตรวจไฟล์ดาวน์โหลด
 
 แพ็กเกจ Store ใช้ไฟล์ runtime จาก `outputs/regex-form-filler/` การทดสอบอัตโนมัติไม่แทนการทดสอบส่วนขยายที่ติดตั้งจริง และ Google Forms อาจเปลี่ยนหน้าตาหรือโครงสร้างที่ส่วนขยายรองรับ

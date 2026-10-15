@@ -86,52 +86,82 @@ test('file fixture: explicit generated drafts use shipping save and never auto-p
     assert.equal(get('form-background').getAttribute('aria-hidden'), null);
     assert.equal(JSON.parse(get('counters').textContent).restorations, 1);
   }
+
+  get('scenario').value = 'removed-tombstone'; get('scenario').handlers.change();
+  assert.equal(get('second-question').hidden, false);
+  const removed = get('selected-second').children[0];
+  assert.equal(removed.getAttribute('data-tooltip'), 'SECOND-ONLY.pdf');
+  assert.equal(removed.getAttribute('jscontroller'), 'By0w6');
+  assert.equal(removed.children.length, 0); assert.equal(removed.textContent, '');
 });
 
-test('file fixture: parsed input precedes deferred module handlers and missed events are never replayed', async () => {
+function pickerFixture(t, mode, readyState = 'complete') {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const nodes = new Map(), events = [], attachments = [];
+  const node = () => ({ textContent: '', handlers: {}, files: [], removed: false,
+    addEventListener(type, handler) { this.handlers[type] = handler; },
+    emit(type) { this.handlers[type]?.(); },
+    cloneNode() { const fresh = node(); fresh.accept = this.accept; return fresh; },
+    replaceWith(fresh) { this.removed = true; nodes.set('upload', fresh); },
+    remove() { this.removed = true; }
+  });
+  const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
+  const document = { readyState, getElementById: get };
+  const context = { document, Date, setTimeout, window: { frameElement: { closest: () => ({}) } },
+    parent: { fileFixture: { mode, event: type => events.push(type), finish: name => attachments.push(name) } } };
+  return { get, document, events, attachments,
+    async start() { runInNewContext(await readFile(new URL('./file-picker.js', import.meta.url), 'utf8'), context); }
+  };
+}
+
+test('file fixture: late input replacement discards the provisional upload without replaying it', async t => {
+  const p = pickerFixture(t, 'settling-two'); await p.start();
+  const initial = p.get('upload');
+  t.mock.timers.tick(1200);
+  initial.files = [new File(['TEST ONLY'], 'TEST-ONLY.pdf', { type: 'application/pdf' })];
+  initial.emit('input'); initial.emit('change');
+  assert.deepEqual(p.events, ['input', 'change']); assert.deepEqual(p.attachments, []);
+  t.mock.timers.tick(600);
+  const fresh = p.get('upload');
+  assert.notEqual(fresh, initial); assert.equal(initial.removed, true); assert.deepEqual(fresh.files, []);
+  t.mock.timers.tick(100);
+  assert.deepEqual(p.attachments, [], 'completion from the provisional input must not attach or replay');
+  fresh.files = [new File(['TEST ONLY'], 'TEST-ONLY.pdf', { type: 'application/pdf' })];
+  fresh.emit('input'); fresh.emit('change'); t.mock.timers.tick(700);
+  assert.deepEqual(p.attachments, ['TEST-ONLY.pdf']);
+});
+
+test('file fixture: parsed input precedes module handlers and initialization replaces it without replay', async t => {
   const html = await readFile(new URL('./file-picker.html', import.meta.url), 'utf8');
   const script = '<script type="module" src="/work/regex-form-filler-tests/file-picker.js"></script>';
   assert.ok(html.indexOf('id="upload"') >= 0 && html.indexOf(script) > html.indexOf('id="upload"'));
-  const nodes = new Map();
-  const get = id => {
-    if (!nodes.has(id)) nodes.set(id, { textContent: '', handlers: {}, files: [],
-      addEventListener(type, handler) { this.handlers[type] = handler; },
-      emit(type) { this.handlers[type]?.(); } });
-    return nodes.get(id);
-  };
-  const input = get('upload');
-  input.files = [new File(['TEST ONLY'], 'TEST-ONLY.pdf', { type: 'application/pdf' })];
-  input.emit('input'); input.emit('change');
-  const events = [], attachments = [], timers = [];
-  const doc = { readyState: 'interactive', getElementById: get };
-  const context = { document: doc, window: { frameElement: { closest: () => ({}) } },
-    parent: { fileFixture: { mode: 'success', event: type => events.push(type), finish: name => attachments.push(name) } },
-    setTimeout: (callback, ms) => timers.push({ callback, ms }) };
-  runInNewContext(await readFile(new URL('./file-picker.js', import.meta.url), 'utf8'), context);
-  assert.match(get('module-marker').textContent, /Module ready/);
-  assert.deepEqual(events, []); assert.deepEqual(attachments, []);
-  doc.readyState = 'complete';
-  input.emit('input'); input.emit('change');
-  assert.deepEqual(events, ['input', 'change']);
-  assert.match(get('progress').textContent, /Received actual File: TEST-ONLY.pdf/);
-  timers.find(timer => timer.ms === 700).callback();
-  assert.deepEqual(attachments, ['TEST-ONLY.pdf']);
+  const p = pickerFixture(t, 'success', 'interactive');
+  const initial = p.get('upload'); initial.files = [new File(['TEST ONLY'], 'TEST-ONLY.pdf', { type: 'application/pdf' })];
+  initial.emit('input'); initial.emit('change'); await p.start();
+  assert.match(p.get('module-marker').textContent, /Module ready/);
+  assert.deepEqual(p.events, []); assert.deepEqual(p.attachments, []);
+  p.document.readyState = 'complete'; t.mock.timers.tick(600);
+  const fresh = p.get('upload');
+  assert.notEqual(fresh, initial); assert.equal(initial.removed, true); assert.deepEqual(fresh.files, []);
+  assert.deepEqual(p.events, []); assert.deepEqual(p.attachments, []);
+  fresh.files = [new File(['TEST ONLY'], 'TEST-ONLY.pdf', { type: 'application/pdf' })];
+  fresh.emit('input'); fresh.emit('change');
+  assert.deepEqual(p.events, ['input', 'change']); assert.match(p.get('progress').textContent, /Received actual File: TEST-ONLY.pdf/);
+  t.mock.timers.tick(700); assert.deepEqual(p.attachments, ['TEST-ONLY.pdf']);
 });
 
-test('file fixture: sequence picker removes the handed-off input before async completion', async () => {
-  const nodes = new Map(), events = [], attached = [], timers = [];
-  const get = id => {
-    if (!nodes.has(id)) nodes.set(id, { handlers: {}, files: [], removed: false,
-      addEventListener(type, handler) { this.handlers[type] = handler; }, remove() { this.removed = true; } });
-    return nodes.get(id);
-  };
-  const context = { document: { getElementById: get }, window: { frameElement: { closest: () => ({}) } },
-    parent: { fileFixture: { mode: 'sequence-close-first', event: type => events.push(type), finish: name => attached.push(name) } },
-    setTimeout: (callback, ms) => timers.push({ callback, ms }) };
-  runInNewContext(await readFile(new URL('./file-picker.js', import.meta.url), 'utf8'), context);
-  get('upload').files = [new File(['different bytes'], 'SECOND-ONLY.pdf', { type: 'application/pdf' })];
-  get('upload').handlers.input(); get('upload').handlers.change();
-  assert.equal(get('upload').removed, true); assert.deepEqual(events, ['input', 'change', 'removedInputs']); assert.deepEqual(attached, []);
-  timers.find(timer => timer.ms === 700).callback();
-  assert.deepEqual(attached, ['SECOND-ONLY.pdf']);
+test('file fixture: sequence picker removes the initialized input before async completion', async t => {
+  const p = pickerFixture(t, 'sequence-close-first'); await p.start(); t.mock.timers.tick(600);
+  const input = p.get('upload');
+  input.files = [new File(['different bytes'], 'SECOND-ONLY.pdf', { type: 'application/pdf' })];
+  input.emit('input'); input.emit('change');
+  assert.equal(input.removed, true); assert.deepEqual(p.events, ['input', 'change', 'removedInputs']); assert.deepEqual(p.attachments, []);
+  t.mock.timers.tick(700); assert.deepEqual(p.attachments, ['SECOND-ONLY.pdf']);
+});
+
+test('file fixture: no-replacement scenario retains the initial input without synthetic events', async t => {
+  const p = pickerFixture(t, 'no-replacement'); await p.start(); const input = p.get('upload');
+  t.mock.timers.tick(60000);
+  assert.equal(p.get('upload'), input); assert.equal(input.removed, false);
+  assert.deepEqual(p.events, []); assert.deepEqual(p.attachments, []);
 });

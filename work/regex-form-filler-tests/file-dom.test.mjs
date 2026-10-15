@@ -7,11 +7,14 @@ import { fileRef } from './file-test-helpers.mjs';
 // Small DOM boundary double; the browser fixture is the File/DataTransfer integration check.
 class Element {
   constructor(tag = 'div', attrs = {}, text = '') { Object.assign(this, { tagName: tag.toUpperCase(), attrs, ownText: text, children: [], hidden: false, clicks: 0, events: [], disabled: false, type: attrs.type || '', files: [], multiple: false }); }
-  append(...nodes) { for (const node of nodes) { node.parentElement = this; this.children.push(node); } }
-  remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(x => x !== this); this.parentElement = null; }
+  changed() { for (let node = this; node; node = node.parentElement) for (const observer of node.observers || []) observer.records.push({ target: this }); }
+  append(...nodes) { for (const node of nodes) { node.parentElement = this; this.children.push(node); } this.changed(); }
+  get childNodes() { return this.ownText ? [{ textContent: this.ownText }, ...this.children] : this.children; }
+  getAttributeNames() { return Object.keys(this.attrs); }
+  remove() { this.changed(); if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(x => x !== this); this.parentElement = null; }
   get isConnected() { return this.root === true || !!this.parentElement?.isConnected; }
   get textContent() { return this.ownText + this.children.map(x => x.textContent).join(''); }
-  set textContent(value) { this.ownText = value; this.children = []; }
+  set textContent(value) { this.ownText = value; this.children = []; this.changed(); }
   get ownerDocument() { return this.doc || this.parentElement?.ownerDocument; }
   get src() { return this.attrs.src || ''; }
   get accept() { return this.attrs.accept || ''; }
@@ -19,7 +22,7 @@ class Element {
   checkVisibility() { for (let node = this; node; node = node.parentElement) if (node.css?.display === 'none' || node.css?.opacity === '0' || ['hidden', 'collapse'].includes(node.css?.visibility)) return false; return true; }
   getAttribute(name) { return this.attrs[name] ?? null; }
   hasAttribute(name) { return Object.hasOwn(this.attrs, name); }
-  setAttribute(name, value) { this.attrs[name] = value; }
+  setAttribute(name, value) { this.attrs[name] = value; this.changed(); }
   matches(selector) {
     return selector.split(',').some(part => {
       let term = part.trim();
@@ -55,8 +58,8 @@ function page(mode = 'success', options = {}) {
   const selected = new Element('div', { role: 'list', 'aria-label': 'Selected files' }); card.append(selected);
   const add = new Element('div', { role: 'button', 'aria-label': 'Add file' }, 'Add file'); card.append(add);
   const questions = [{ card, heading, selected, add }];
-  if (options.twoFiles) {
-    const second = { card: new Element('div', { role: 'listitem' }), heading: new Element('div', { role: 'heading', 'aria-level': '3' }, 'Second'),
+  for (let i = 1; i < (options.fileCount ?? (options.twoFiles ? 2 : 1)); i++) {
+    const second = { card: new Element('div', { role: 'listitem' }), heading: new Element('div', { role: 'heading', 'aria-level': '3' }, i === 1 ? 'Second' : `Upload ${i + 1}`),
       selected: new Element('div', { role: 'list', 'aria-label': 'Selected files' }), add: new Element('div', { role: 'button' }, 'Add file') };
     second.card.append(second.heading, second.selected, second.add); wrapper.append(second.card); questions.push(second);
   }
@@ -65,7 +68,7 @@ function page(mode = 'success', options = {}) {
   if (options.labelledAdd) add.attrs['aria-labelledby'] = 'i1 i4';
   const next = new Element('div', { role: 'button' }, 'Next'); form.append(next);
   const submit = new Element('button', { type: 'submit' }, 'Submit'); form.append(submit);
-  let clock = 0, ticks = 0, uploadTicks, closedTick, iframe, dialog, inner, input, confirm, handedFile;
+  let clock = 0, ticks = 0, uploadTicks, closedTick, iframe, dialog, inner, input, confirm, handedFile, replaceInput, initializePicker;
   const assignmentStates = [], eventStates = [], assignmentMasks = [], inputs = [], openStates = [], progresses = [];
   const refs = [fileRef(), fileRef({ fileId: '07687bdb-d884-49fe-9b25-3f7d0309ae09', name: 'SECOND-ONLY.pdf', size: 6 })];
   const oldFrame = new Element('iframe', { src: 'https://docs.google.com/picker?old=1' });
@@ -102,6 +105,7 @@ function page(mode = 'success', options = {}) {
     inner.readyState = options.initialReadyState ?? 'complete';
     const innerWrapper = options.innerProgress ? new Element() : inner;
     if (innerWrapper !== inner) inner.append(innerWrapper);
+    const openedAt = clock;
     const innerDialog = new Element('div', { role: 'dialog', 'aria-label': 'Insert file' }); innerWrapper.append(innerDialog);
     if (mode === 'labelled-dialog') {
       delete innerDialog.attrs['aria-label']; innerDialog.attrs['aria-labelledby'] = 'picker-title';
@@ -110,12 +114,21 @@ function page(mode = 'success', options = {}) {
     input = new Element('input', { type: 'file', accept: options.accept ?? (mode === 'reject' ? 'image/png' : 'application/pdf') });
     input.hidden = options.hiddenInput === true;
     inputs.push(input);
-    innerDialog.append(input);
+    const browse = new Element('button', { type: 'button' }, 'Browse');
+    innerDialog.append(browse, input);
     class Transfer { constructor() { this.files = []; this.items = { add: file => this.files.push(file) }; } }
-    inner.defaultView = { File, DataTransfer: Transfer, Event, HTMLInputElement: class {} };
+    class Observer {
+      constructor() { this.records = []; this.targets = []; }
+      observe(target) { (target.observers ||= new Set()).add(this); this.targets.push(target); }
+      takeRecords() { return this.records.splice(0); }
+      disconnect() { this.targets.forEach(target => target.observers.delete(this)); }
+    }
+    inner.documentElement = inner;
+    inner.defaultView = { File, DataTransfer: Transfer, Event, MutationObserver: Observer, HTMLInputElement: class {} };
     Object.defineProperty(inner.defaultView.HTMLInputElement.prototype, 'files', { set(files) {
       assignmentStates.push(inner.readyState); assignmentMasks.push(mask.getAttribute('aria-hidden')); this.files = files;
       if (mode === 'reload-before-input') inner.readyState = 'loading';
+      options.onAssign?.({ input: this, inner, iframe, replaceInput });
     } });
     iframe.contentDocument = inner; iframe.contentWindow = inner.defaultView;
     if (mode === 'denied') Object.defineProperty(iframe, 'contentDocument', { get() { throw new Error('denied'); } });
@@ -129,9 +142,9 @@ function page(mode = 'success', options = {}) {
     input.onEvent = event => {
       eventStates.push([event.type, inner.readyState]);
       if (inner.readyState !== 'complete') return; // Deferred module handlers have not bound yet.
-      if (event.type === 'input') options.onInput?.({ input, inner, iframe });
+      if (event.type === 'input') options.onInput?.({ input, inner, iframe, replaceInput });
       if (mode === 'reload-before-change' && event.type === 'input') inner.readyState = 'loading';
-      if (event.type !== 'change') return;
+      if (event.type !== 'change' || clock - openedAt < (options.handlersAfterMs || 0)) return;
       uploadTicks = ticks; handedFile = input.files[0];
       if (options.innerProgress) {
         const progress = new Element('div', { role: 'dialog', 'aria-label': 'Uploading' });
@@ -148,7 +161,20 @@ function page(mode = 'success', options = {}) {
         item.append(new Element('span', {}, handedFile.name)); innerDialog.append(item);
       }
     };
-    options.onOpen?.({ background, form, ...active, dialog, iframe, inner, input, document });
+    replaceInput = () => {
+      const old = input;
+      input = new Element('input', { ...old.attrs }); input.hidden = old.hidden; input.onEvent = old.onEvent;
+      input.multiple = old.multiple; input.disabled = old.disabled;
+      old.parentElement.append(input); old.remove(); inputs.push(input);
+      return input;
+    };
+    let readyAt;
+    initializePicker = () => {
+      if (options.initializeAfterMs === false || inner.readyState !== 'complete' || inner.URL !== iframe.src || !input.isConnected) return;
+      readyAt ??= clock;
+      if (clock - readyAt >= (options.initializeAfterMs ?? 600)) { replaceInput(); initializePicker = undefined; }
+    };
+    options.onOpen?.({ background, form, ...active, dialog, iframe, inner, input, browse, document });
   };
   questions.forEach(question => { question.add.onClick = () => open(question); });
   if (mode === 'already-open') open();
@@ -159,6 +185,7 @@ function page(mode = 'success', options = {}) {
     setTimeout(callback, ms) {
       clock += closedTick !== undefined && options.closurePollGap ? options.closurePollGap : options.fastClock && input?.events.includes('change') ? 20000 : ms; ticks++;
       if (inner && ticks >= options.completeAfterTicks) inner.readyState = 'complete';
+      initializePicker?.();
       if (ticks === options.changeHeadingAtTick) heading.textContent = 'Changed';
       const progress = progresses.at(-1);
       if (progress?.progress.isConnected) {
@@ -188,10 +215,10 @@ function page(mode = 'success', options = {}) {
             if (!document.querySelector('[role="progressbar"]')) document.append(new Element('div', { role: 'progressbar' }));
           }
         }
-        else if (['success', 'wrong', 'labelled-dialog'].includes(mode) && !active.selected.children.length) { attach(mode === 'wrong' ? 'prefix-TEST-ONLY.pdf' : handedFile.name); close(); }
+        else if (['success', 'wrong', 'labelled-dialog'].includes(mode) && !active.selected.querySelector('span')) { attach(mode === 'wrong' ? 'prefix-TEST-ONLY.pdf' : handedFile.name); close(); }
       }
       if (closedTick !== undefined && !options.keepMask && ticks >= closedTick + options.restoreAfterTicks) delete mask.attrs['aria-hidden'];
-      options.onTick?.({ background, form, ...active, dialog, iframe, inner, input, document, closedTick, ticks });
+      options.onTick?.({ background, form, ...active, dialog, iframe, inner, input, document, closedTick, ticks, clock, replaceInput });
       Promise.resolve().then(callback); return ticks;
     }
   };
@@ -200,8 +227,8 @@ function page(mode = 'success', options = {}) {
   return { add, selected, next, submit, card, heading, background, form, questions, context, call, oldFrame, inputs, openStates, assignmentStates, assignmentMasks, eventStates, progresses, get elapsed() { return clock; }, get input() { return input; }, get confirm() { return confirm; },
     async run(dryRun = false, extra = {}) {
       const labels = await call('collect', { allowAdvance: true });
-      assert.deepEqual(Array.from(labels), options.twoFiles ? ['Upload', 'Second'] : ['Upload']);
-      return call('apply', { dryRun, jobs: questions.map((_, i) => ({ rules: [i], value: refs[i] })), files: dryRun ? {} : { [refs[0].fileId]: 'dGVzdA==', [refs[1].fileId]: 'c2Vjb25k' }, ...extra });
+      assert.deepEqual(Array.from(labels), questions.map(q => q.heading.textContent));
+      return call('apply', { dryRun, jobs: questions.map((_, i) => ({ rules: [i], value: refs[i % refs.length] })), files: dryRun ? {} : { [refs[0].fileId]: 'dGVzdA==', [refs[1].fileId]: 'c2Vjb25k' }, ...extra });
     } };
 }
 
@@ -307,9 +334,9 @@ test('file review: exact Add file allows question aria-labelledby but independen
 });
 
 test('file review: outer exact filename while owned picker remains open must wait to timeout', async () => {
-  const p = page('name-open', { fastClock: true });
+  const p = page('name-open');
   assert.equal((await p.run())[0].code, 'timeout');
-  assert.ok(p.elapsed >= 60000 && p.elapsed < 61000);
+  assert.ok(p.elapsed >= 60000 && p.elapsed < 60200);
   assert.equal(p.add.clicks, 1); assert.equal(p.input.events.filter(x => x === 'change').length, 1);
   assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
 });
@@ -351,13 +378,99 @@ test('file readiness: interactive input waits for complete before assignment and
   assert.equal(p.next.clicks, 1); assert.equal(p.submit.clicks, 0);
 });
 
-test('file readiness: loading or interactive picker times out within discovery bound without assignment or Next', async () => {
-  for (const initialReadyState of ['loading', 'interactive']) {
-    const p = page('success', { initialReadyState });
-    assert.equal((await p.run())[0].code, 'file-manual');
-    assert.ok(p.elapsed >= 10000 && p.elapsed < 10200);
+for (const [name, delays] of [
+  ['one picker initializes after twelve seconds', [12000]],
+  ['two delayed pickers upload strictly in order', [12000, 13500]],
+  ['discovery near the old deadline leaves time for settling', [9600]]
+]) test(`file discovery budget: ${name}`, async () => {
+  let openedAt, current, earlyAdvance;
+  const handedAt = [];
+  const p = page('success', { mask: 'ancestor', restoreAfterTicks: 3, twoFiles: delays.length === 2,
+    initialReadyState: 'loading', hiddenInput: true,
+    onOpen: state => {
+      openedAt = p.elapsed; current = state;
+      state.inner.URL = 'about:blank'; state.browse.remove(); state.input.remove();
+    },
+    onTick: state => {
+      if (!earlyAdvance) earlyAdvance = p.call('advance', { allowIncomplete: true });
+      assert.equal(p.next.clicks, 0);
+      if (!p.questions[0].selected.children.length || p.background.getAttribute('aria-hidden') === 'true' && p.openStates.length === 1) {
+        assert.equal(p.questions[1]?.add.clicks || 0, 0);
+      }
+      if (state.clock - openedAt >= delays[p.openStates.length - 1] && state.inner.readyState !== 'complete') {
+        state.inner.URL = state.iframe.src; state.inner.readyState = 'complete';
+        state.inner.querySelector('[role="dialog"]').append(current.browse, current.input);
+      }
+    },
+    onAssign: () => handedAt.push(p.elapsed - openedAt)
+  });
+  assert.deepEqual(Array.from(await p.run(), row => row.code), delays.map(() => 'filled'));
+  assert.notEqual((await earlyAdvance).code, 'attempted');
+  assert.deepEqual(p.assignmentStates, delays.map(() => 'complete'));
+  assert.deepEqual(p.inputs.map(input => input.events), delays.flatMap(() => [[], ['input', 'change']]));
+  assert.deepEqual(p.questions.map(q => q.selected.querySelector('span')?.textContent), ['TEST-ONLY.pdf', 'SECOND-ONLY.pdf'].slice(0, delays.length));
+  assert.deepEqual(p.inputs.map(input => input.files[0]?.name), ['TEST-ONLY.pdf', 'SECOND-ONLY.pdf'].slice(0, delays.length).flatMap(name => [undefined, name]));
+  assert.ok(handedAt.every((time, i) => time >= delays[i] + 1000 && time < 60000));
+  assert.deepEqual(p.questions.map(q => q.add.clicks), delays.map(() => 1));
+  assert.deepEqual(p.openStates, delays.length === 2 ? [
+    { mask: null, attachments: [0, 0], next: 0 }, { mask: null, attachments: [1, 0], next: 0 }
+  ] : [{ mask: null, attachments: [0], next: 0 }]);
+  assert.equal((await p.call('advance')).code, 'attempted');
+  assert.equal(p.next.clicks, 1); assert.equal(p.submit.clicks, 0);
+});
+
+test('file readiness: loading, interactive or ready-at-expiry picker exhausts the file budget without assignment or Next', async () => {
+  for (const options of [{ initialReadyState: 'loading' }, { initialReadyState: 'interactive' }, { initialReadyState: 'loading', completeAfterTicks: 400 }]) {
+    const p = page('success', options);
+    const [row] = await p.run();
+    assert.equal(row.code, 'timeout'); assert.equal(row.diagnostic, 'picker-discovery-timeout');
+    assert.ok(p.elapsed >= 60000 && p.elapsed < 60200);
     assert.deepEqual(p.assignmentStates, []); assert.deepEqual(p.input.events, []);
     assert.equal(p.input.files.length, 0); assert.equal(p.add.clicks, 1);
+    assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
+    assert.equal(p.next.clicks + p.submit.clicks, 0);
+  }
+});
+
+test('file discovery budget: cancellation or owner drift while the document is still blank stops at the next poll', async () => {
+  for (const change of [
+    state => state.dialog.remove(),
+    state => { state.heading.textContent = 'Changed'; },
+    state => { state.iframe.remove(); state.dialog.append(new Element('iframe', { src: state.iframe.src })); },
+    state => {
+      const replacement = new Element('div', { role: 'dialog', 'aria-label': 'Insert file' });
+      state.iframe.remove(); state.dialog.remove(); replacement.append(state.iframe); state.document.append(replacement);
+    }
+  ]) {
+    const p = page('success', { twoFiles: true, onOpen: state => { state.inner.URL = 'about:blank'; },
+      onTick: state => { if (state.clock === 1200) change(state); }
+    });
+    const rows = await p.run();
+    assert.equal(rows[0].code, 'stale'); assert.equal(rows[1].diagnostic, 'previous-unconfirmed');
+    assert.equal(p.elapsed, 1200); assert.deepEqual(p.assignmentStates, []); assert.deepEqual(p.input.events, []);
+    assert.equal(p.questions[1].add.clicks, 0);
+    assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
+    assert.equal(p.next.clicks + p.submit.clicks, 0);
+  }
+});
+
+test('file discovery budget: the whole-run deadline caps both discovery and settling of later files', async () => {
+  for (const phase of ['discovery', 'settling']) {
+    let openedAt;
+    const p = page('success', { fileCount: 4, initialReadyState: 'loading',
+      onOpen: state => { openedAt = p.elapsed; if (phase === 'settling' && p.openStates.length === 4) state.browse.disabled = true; },
+      onTick: state => {
+        const delay = p.openStates.length < 4 ? 57000 : phase === 'discovery' ? 12000 : 0;
+        if (state.clock - openedAt >= delay) state.inner.readyState = 'complete';
+      }
+    });
+    const rows = await p.run();
+    assert.deepEqual(Array.from(rows, row => row.code), ['filled', 'filled', 'filled', 'timeout'], phase);
+    assert.equal(rows[3].diagnostic, 'overall-timeout', phase);
+    assert.ok(p.elapsed >= 180000 && p.elapsed < 180200, `${phase}: ${p.elapsed}`);
+    assert.equal(p.assignmentStates.length, 3);
+    assert.deepEqual(p.inputs.map(input => input.events), [[], ['input', 'change'], [], ['input', 'change'], [], ['input', 'change'], [], ...(phase === 'settling' ? [[]] : [])]);
+    assert.deepEqual(p.questions.map(q => q.selected.querySelector('span')?.textContent), ['TEST-ONLY.pdf', 'SECOND-ONLY.pdf', 'TEST-ONLY.pdf', undefined]);
     assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
     assert.equal(p.next.clicks + p.submit.clicks, 0);
   }
@@ -382,6 +495,330 @@ test('file readiness: changed heading while waiting remains stale with no file a
   assert.equal(p.next.clicks + p.submit.clicks, 0);
 });
 
+test('file settling: complete picker drops an early handoff; both first handoffs wait for initialization', async () => {
+  const p = page('success', { mask: 'ancestor', twoFiles: true, hiddenInput: true, handlersAfterMs: 1000 });
+  const rows = await p.run();
+  assert.deepEqual(Array.from(rows, row => row.code), ['filled', 'filled']);
+  assert.deepEqual(p.inputs.map(input => input.events), [[], ['input', 'change'], [], ['input', 'change']]);
+  assert.deepEqual(p.questions.map(q => q.selected.querySelector('span')?.textContent), ['TEST-ONLY.pdf', 'SECOND-ONLY.pdf']);
+  assert.equal(p.assignmentStates.length, 2);
+  assert.equal((await p.call('advance')).code, 'attempted'); assert.equal(p.submit.clicks, 0);
+});
+
+test('file settling: Browse with omitted type and native submit default permits one handoff without a click', async () => {
+  let browse;
+  const p = page('success', { onOpen: state => {
+    browse = state.browse; delete browse.attrs.type; browse.type = 'submit';
+  } });
+  assert.equal((await p.run())[0].code, 'filled');
+  assert.equal(p.assignmentStates.length, 1); assert.deepEqual(p.input.events, ['input', 'change']);
+  assert.equal(p.selected.querySelector('span').textContent, 'TEST-ONLY.pdf');
+  assert.equal(browse.clicks + p.submit.clicks, 0);
+});
+
+test('file settling: owned UI mutation restarts the idle period before the one handoff', async () => {
+  let handedAt;
+  const p = page('success', { handlersAfterMs: 1800,
+    onTick: p => { if (p.clock === 750) p.inner.querySelector('button').textContent = 'Browse'; },
+    onInput: () => { handedAt = p.elapsed; }
+  });
+  assert.equal((await p.run())[0].code, 'filled');
+  assert.ok(handedAt >= 1750, `handoff at ${handedAt}`);
+  assert.equal(p.assignmentStates.length, 1); assert.deepEqual(p.input.events, ['input', 'change']);
+});
+
+test('file settling: busy or unavailable Browse exhausts the file budget without events', async () => {
+  for (const onOpen of [
+    p => p.inner.append(new Element('div', { role: 'progressbar' })),
+    p => p.inner.querySelector('[role="dialog"]').setAttribute('aria-busy', 'true'),
+    p => { p.browse.disabled = true; }, p => { p.browse.hidden = true; }, p => p.browse.remove()
+  ]) {
+    const p = page('success', { twoFiles: true, onOpen });
+    const rows = await p.run();
+    assert.equal(rows[0].code, 'timeout');
+    assert.deepEqual(Array.from(rows, row => row.diagnostic), ['picker-settling-timeout', 'previous-unconfirmed']);
+    assert.ok(p.elapsed >= 60000 && p.elapsed < 60200, `elapsed=${p.elapsed}`);
+    assert.deepEqual(p.assignmentStates, []); assert.deepEqual(p.input.events, []);
+    assert.equal(p.questions[1].add.clicks, 0);
+    assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
+    assert.equal(p.next.clicks + p.submit.clicks, 0);
+  }
+});
+
+test('file settling: perpetual UI churn or readiness near file expiry cannot extend the file budget', async () => {
+  for (const options of [
+    { onTick: p => { if (p.inner) p.inner.querySelector('button').textContent = 'Browse'; } },
+    { initialReadyState: 'interactive', completeAfterTicks: 394 }
+  ]) {
+    const p = page('success', { twoFiles: true, ...options });
+    const rows = await p.run();
+    assert.equal(rows[0].code, 'timeout');
+    assert.deepEqual(Array.from(rows, row => row.diagnostic), ['picker-settling-timeout', 'previous-unconfirmed']);
+    assert.ok(p.elapsed >= 60000 && p.elapsed < 60200, `elapsed=${p.elapsed}`);
+    assert.deepEqual(p.assignmentStates, []); assert.deepEqual(p.input.events, []);
+    assert.equal(p.questions[1].add.clicks, 0);
+    assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
+  }
+});
+
+test('file settling: transient busy UI requires a fresh idle period', async () => {
+  let handedAt;
+  const p = page('success', {
+    onTick: p => {
+      const dialog = p.inner.querySelector('[role="dialog"]');
+      if (p.clock === 750) dialog.setAttribute('aria-busy', 'true');
+      if (p.clock === 1050) dialog.setAttribute('aria-busy', 'false');
+    }, onInput: () => { handedAt = p.elapsed; }
+  });
+  assert.equal((await p.run())[0].code, 'filled');
+  assert.ok(handedAt >= 2050, `handoff at ${handedAt}`);
+  assert.equal(p.assignmentStates.length, 1);
+});
+
+test('file settling: replaced input in the same owned picker settles before each single fresh handoff', async () => {
+  let openedAt;
+  const stale = [], fresh = [], replacedAt = [], handedAt = [];
+  const p = page('success', { mask: 'ancestor', twoFiles: true, hiddenInput: true, initializeAfterMs: false,
+    onOpen: ({ input }) => { stale.push(input); openedAt = p.elapsed; },
+    onTick: state => { if (state.clock === openedAt + 600) { fresh.push(state.replaceInput()); replacedAt.push(state.clock); } },
+    onInput: () => { handedAt.push(p.elapsed); }
+  });
+  assert.deepEqual(Array.from(await p.run(), row => row.code), ['filled', 'filled']);
+  assert.equal(p.assignmentStates.length, 2);
+  assert.deepEqual(stale.map(input => [input.files.length, input.events]), [[0, []], [0, []]]);
+  assert.deepEqual(fresh.map(input => input.events), [['input', 'change'], ['input', 'change']]);
+  assert.deepEqual(fresh.map(input => input.files[0].name), ['TEST-ONLY.pdf', 'SECOND-ONLY.pdf']);
+  assert.ok(handedAt.every((time, i) => time - replacedAt[i] >= 1000));
+  assert.equal((await p.call('advance')).code, 'attempted'); assert.equal(p.submit.clicks, 0);
+});
+
+for (const delay of [600, 1800]) test(`file initialization: observed replacement after ${delay}ms gates both single handoffs`, async () => {
+  let openedAt;
+  const initial = [], fresh = [], handedAt = [];
+  const p = page('success', { mask: 'ancestor', twoFiles: true, initializeAfterMs: false,
+    onOpen: ({ input }) => { initial.push(input); openedAt = p.elapsed; },
+    onTick: state => { if (state.clock === openedAt + delay) fresh.push(state.replaceInput()); },
+    onAssign: () => handedAt.push(p.elapsed - openedAt)
+  });
+  const rows = await p.run();
+  assert.ok(handedAt.every(time => time >= delay + 1000), `premature assignment: ${handedAt}`);
+  assert.deepEqual(Array.from(rows, row => row.code), ['filled', 'filled']);
+  assert.deepEqual(initial.map(input => [input.files.length, input.events]), [[0, []], [0, []]]);
+  assert.deepEqual(fresh.map(input => input.events), [['input', 'change'], ['input', 'change']]);
+  assert.deepEqual(fresh.map(input => input.files[0].name), ['TEST-ONLY.pdf', 'SECOND-ONLY.pdf']);
+  assert.equal(p.assignmentStates.length, 2);
+  assert.deepEqual(p.questions.map(q => q.selected.querySelector('span')?.textContent), ['TEST-ONLY.pdf', 'SECOND-ONLY.pdf']);
+  assert.deepEqual(p.openStates, [
+    { mask: null, attachments: [0, 0], next: 0 }, { mask: null, attachments: [1, 0], next: 0 }
+  ]);
+  assert.equal((await p.call('advance')).code, 'attempted'); assert.equal(p.submit.clicks, 0);
+});
+
+for (const replacementAt of [450, 750]) test(`file loading observation: replacement at ${replacementAt}ms survives discovery until complete`, async () => {
+  let openedAt;
+  const initial = [], fresh = [], handedAt = [];
+  const p = page('success', { mask: 'ancestor', twoFiles: true, initialReadyState: 'loading', initializeAfterMs: false,
+    onOpen: ({ input }) => { initial.push(input); openedAt = p.elapsed; },
+    onTick: state => {
+      const elapsed = state.clock - openedAt;
+      if (elapsed === 300) state.inner.readyState = 'interactive';
+      if (elapsed === replacementAt) fresh.push(state.replaceInput());
+      if (elapsed === 750) state.inner.readyState = 'complete';
+    },
+    onAssign: () => handedAt.push(p.elapsed - openedAt)
+  });
+  const rows = await p.run();
+  assert.deepEqual(Array.from(rows, row => row.code), ['filled', 'filled']);
+  assert.deepEqual(p.assignmentStates, ['complete', 'complete']);
+  assert.deepEqual(p.eventStates, [['input', 'complete'], ['change', 'complete'], ['input', 'complete'], ['change', 'complete']]);
+  assert.ok(handedAt.every(time => time >= 1750), `handoff before complete + idle: ${handedAt}`);
+  assert.deepEqual(initial.map(input => [input.files.length, input.events]), [[0, []], [0, []]]);
+  assert.deepEqual(fresh.map(input => input.events), [['input', 'change'], ['input', 'change']]);
+  assert.deepEqual(fresh.map(input => input.files[0].name), ['TEST-ONLY.pdf', 'SECOND-ONLY.pdf']);
+  assert.deepEqual(p.questions.map(q => q.selected.querySelector('span')?.textContent), ['TEST-ONLY.pdf', 'SECOND-ONLY.pdf']);
+  assert.deepEqual(p.openStates, [
+    { mask: null, attachments: [0, 0], next: 0 }, { mask: null, attachments: [1, 0], next: 0 }
+  ]);
+  assert.equal((await p.call('advance')).code, 'attempted'); assert.equal(p.submit.clicks, 0);
+});
+
+for (const drift of ['document', 'dialog', 'actual-url', 'cancel', 'missing-input']) test(`file loading observation: ${drift} cannot transfer generation ownership`, async () => {
+  const p = page('success', { twoFiles: true, initialReadyState: 'loading', initializeAfterMs: false,
+    onTick: state => {
+      if (state.clock !== 450) return;
+      if (drift === 'document') {
+        const replacement = new Element(); replacement.root = true; replacement.doc = replacement;
+        replacement.URL = state.inner.URL; replacement.readyState = 'loading'; replacement.defaultView = state.inner.defaultView;
+        const dialog = state.input.parentElement; dialog.remove(); replacement.append(dialog);
+        state.iframe.contentDocument = replacement;
+      } else if (drift === 'dialog') {
+        const old = state.input.parentElement, replacement = new Element('div', { ...old.attrs });
+        state.input.remove(); replacement.append(state.input); old.remove(); state.inner.append(replacement);
+      } else if (drift === 'actual-url') state.inner.URL = 'about:blank';
+      else if (drift === 'cancel') state.dialog.remove();
+      else state.input.remove();
+    }
+  });
+  const rows = await p.run();
+  assert.equal(p.elapsed, 450, 'observed picker drift must stop promptly, even while loading');
+  assert.equal(rows[0].code, drift === 'missing-input' ? 'file-manual' : 'stale');
+  assert.equal(rows[1].diagnostic, 'previous-unconfirmed');
+  assert.deepEqual(p.assignmentStates, []); assert.ok(p.inputs.every(input => !input.files.length && !input.events.length));
+  assert.deepEqual(p.questions.map(q => q.add.clicks), [1, 0]);
+  assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
+  assert.equal(p.next.clicks + p.submit.clicks, 0);
+});
+
+for (const initializeAfterMs of [false, 0]) test(`file initialization: ${initializeAfterMs === false ? 'absent' : 'missed'} replacement never assigns and reports the missing transition`, async () => {
+  const p = page('success', { twoFiles: true, initializeAfterMs });
+  const rows = await p.run();
+  assert.deepEqual(p.assignmentStates, []);
+  assert.equal(rows[0].code, 'timeout');
+  assert.deepEqual(Array.from(rows, row => row.diagnostic), ['picker-initialization-not-observed', 'previous-unconfirmed']);
+  assert.ok(p.elapsed >= 60000 && p.elapsed < 60200);
+  assert.deepEqual(p.input.events, []); assert.equal(p.input.files.length, 0);
+  assert.deepEqual(p.questions.map(q => q.add.clicks), [1, 0]);
+  assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
+  assert.equal(p.next.clicks + p.submit.clicks, 0);
+});
+
+test('file initialization: selected or ineligible replacements and an original input moved elsewhere cannot authorize handoff', async () => {
+  for (const change of [
+    state => { const old = state.input; state.replaceInput(); state.document.append(old); },
+    state => { state.replaceInput().files = [{}]; },
+    state => { state.input.files = [{}]; state.replaceInput(); },
+    state => { state.replaceInput().multiple = true; },
+    state => { state.replaceInput().disabled = true; },
+    state => { state.replaceInput().attrs.accept = 'image/png'; }
+  ]) {
+    const p = page('success', { twoFiles: true, initializeAfterMs: false,
+      onTick: state => { if (state.clock === 600) change(state); }
+    });
+    const rows = await p.run();
+    assert.deepEqual(p.assignmentStates, []); assert.ok(p.inputs.every(input => input.events.length === 0));
+    assert.notEqual(rows[0].code, 'filled'); assert.equal(rows[1].diagnostic, 'previous-unconfirmed');
+    assert.equal(p.questions[1].add.clicks, 0);
+    assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
+    assert.equal(p.next.clicks + p.submit.clicks, 0);
+  }
+});
+
+test('file initialization: a confirmed first file cannot authorize an unobserved second generation', async () => {
+  let openedAt;
+  const p = page('success', { twoFiles: true, initializeAfterMs: false,
+    onOpen: () => { openedAt = p.elapsed; },
+    onTick: state => { if (p.openStates.length === 1 && state.clock === openedAt + 600) state.replaceInput(); }
+  });
+  const rows = await p.run();
+  assert.deepEqual(Array.from(rows, row => row.code), ['filled', 'timeout']);
+  assert.equal(rows[1].diagnostic, 'picker-initialization-not-observed');
+  assert.equal(p.assignmentStates.length, 1); assert.deepEqual(p.input.events, []);
+  assert.deepEqual(p.questions.map(q => q.selected.querySelector('span')?.textContent), ['TEST-ONLY.pdf', undefined]);
+  assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
+  assert.equal(p.next.clicks + p.submit.clicks, 0);
+});
+
+test('file settling: repeated input replacement cannot extend the file deadline', async () => {
+  const p = page('success', { twoFiles: true, initializeAfterMs: false, onTick: state => { if (state.clock % 450 === 0) state.replaceInput(); } });
+  const [row] = await p.run();
+  assert.equal(row.code, 'timeout'); assert.equal(row.diagnostic, 'picker-settling-timeout');
+  assert.ok(p.elapsed >= 60000 && p.elapsed < 60200);
+  assert.deepEqual(p.assignmentStates, []); assert.ok(p.inputs.every(input => !input.events.length && !input.files.length));
+  assert.equal(p.questions[1].add.clicks, 0);
+  assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
+});
+
+test('file settling: missing, multiple or outside-dialog replacement inputs remain unassigned', async () => {
+  for (const change of [
+    state => state.input.remove(),
+    state => state.input.parentElement.append(new Element('input', { type: 'file' })),
+    state => { const replacement = state.replaceInput(); replacement.remove(); state.inner.append(replacement); }
+  ]) {
+    const p = page('success', { twoFiles: true, onTick: state => { if (state.clock === 600) change(state); } });
+    assert.notEqual((await p.run())[0].code, 'filled');
+    assert.deepEqual(p.assignmentStates, []); assert.ok(p.inputs.every(input => !input.events.length));
+    assert.equal(p.questions[1].add.clicks, 0);
+    assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
+  }
+});
+
+test('file handoff: input replacement after assignment never reacquires or retries', async () => {
+  for (const phase of ['onAssign', 'onInput']) {
+    const p = page('success', { twoFiles: true, [phase]: state => state.replaceInput() });
+    assert.equal((await p.run())[0].code, 'pending', phase);
+    assert.equal(p.assignmentStates.length, 1, phase);
+    assert.deepEqual(p.inputs[0].events, [], phase); assert.equal(p.inputs[0].files.length, 0, phase);
+    assert.deepEqual(p.inputs[1].events, phase === 'onAssign' ? [] : ['input'], phase);
+    assert.equal(p.inputs[1].files.length, 1, phase);
+    assert.deepEqual(p.inputs[2].events, [], phase); assert.equal(p.inputs[2].files.length, 0, phase);
+    assert.equal(p.questions[1].add.clicks, 0, phase);
+    assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted', phase);
+    assert.equal(p.next.clicks + p.submit.clicks, 0, phase);
+  }
+});
+
+test('file settling: cancellation and replaced owners or dialogs abort before assignment', async () => {
+  const changes = {
+    cancel: p => p.dialog.remove(), hidden: p => { p.dialog.hidden = true; },
+    heading: p => { p.heading.textContent = 'Changed'; },
+    form: p => { p.form.remove(); p.document.append(p.form); },
+    frame: p => { p.iframe.remove(); p.dialog.append(new Element('iframe', { src: p.iframe.src })); },
+    document: p => { p.iframe.contentDocument = new Element(); },
+    dialog: p => { p.inner.querySelector('[role="dialog"]').remove(); p.inner.append(new Element('div', { role: 'dialog', 'aria-label': 'Insert file' })); }
+  };
+  for (const [name, change] of Object.entries(changes)) {
+    const p = page('success', { mask: 'ancestor', twoFiles: true, onTick: p => { if (p.clock === 600) change(p); } });
+    assert.equal((await p.run())[0].code, 'stale', name);
+    assert.deepEqual(p.assignmentStates, [], name); assert.deepEqual(p.input.events, [], name);
+    assert.equal(p.questions[1].add.clicks, 0, name);
+    assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted', name);
+    assert.equal(p.next.clicks + p.submit.clicks, 0, name);
+  }
+});
+
+const tombstone = () => new Element('div', { jscontroller: 'By0w6', jsaction: 'mouseover:eGiyHb; click:eGiyHb; focus:eGiyHb; touchstart:eGiyHb;',
+  'data-tooltip': 'TEST-ONLY.pdf', role: 'listitem', 'data-vertical-offset': '-22', class: 'yP1fJf' });
+
+test('file tombstone: removed empty item permits a new upload without altering the leaf or earlier attachment', async () => {
+  const p = page('success', { twoFiles: true, preexisting: true });
+  const removed = tombstone(), existing = p.selected.children[0];
+  p.questions[1].selected.append(removed);
+  assert.deepEqual(Array.from(await p.run(), row => row.code), ['preserved', 'filled']);
+  assert.equal(p.selected.children[0], existing); assert.equal(p.add.clicks, 0);
+  assert.equal(p.questions[1].selected.children[0], removed); assert.equal(removed.childNodes.length, 0);
+  assert.equal(p.questions[1].selected.querySelector('span').textContent, 'SECOND-ONLY.pdf');
+  assert.equal(p.assignmentStates.length, 1); assert.deepEqual(p.input.events, ['input', 'change']);
+  assert.equal((await p.call('advance')).code, 'attempted'); assert.equal(p.submit.clicks, 0);
+});
+
+test('file tombstone: dry run is ready, while the empty question cannot advance normally', async () => {
+  const p = page(); p.selected.append(tombstone());
+  assert.equal((await p.run(true))[0].code, 'ready'); assert.equal(p.add.clicks, 0);
+  await p.call('collect', { allowAdvance: true });
+  await p.call('apply', { jobs: [{ rules: [] }] });
+  assert.equal((await p.call('advance')).code, 'incomplete'); assert.equal(p.next.clicks, 0);
+});
+
+test('file tombstone: nonempty, interactive, busy and unknown items remain preserved', async () => {
+  for (const change of [
+    item => { item.textContent = ' '; }, item => item.append(new Element('span')),
+    item => Object.defineProperty(item, 'childNodes', { value: [{ textContent: '' }] }),
+    item => item.append(new Element('button', { type: 'button' }, 'Remove file')),
+    item => item.setAttribute('tabindex', '0'), item => item.setAttribute('contenteditable', 'true'),
+    item => item.setAttribute('aria-label', 'TEST-ONLY.pdf'), item => item.setAttribute('aria-busy', 'true'),
+    item => item.setAttribute('jscontroller', 'Unknown'), item => item.setAttribute('jsaction', 'click:unknown'),
+    item => { delete item.attrs['data-tooltip']; },
+    item => item.append(new Element('div', { role: 'progressbar' }))
+  ]) {
+    const p = page(), item = tombstone(); change(item); p.selected.append(item);
+    assert.equal((await p.run())[0].code, 'preserved'); assert.equal(p.add.clicks, 0);
+    assert.equal(p.selected.children[0], item);
+    assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
+  }
+  const p = page(); p.selected.append(tombstone()); p.selected.setAttribute('aria-busy', 'true');
+  assert.equal((await p.run())[0].code, 'preserved'); assert.equal(p.add.clicks, 0);
+});
+
 test('file mask: unchanged whole form survives its own picker mask, including two consecutive uploads', async () => {
   for (const mask of ['ancestor', 'form']) {
     const p = page('success', { mask, twoFiles: true, hiddenInput: true, retainedPicker: true,
@@ -390,7 +827,7 @@ test('file mask: unchanged whole form survives its own picker mask, including tw
     assert.deepEqual(Array.from(rows, row => row.code), ['filled', 'filled'], mask);
     assert.deepEqual(p.assignmentMasks, ['true', 'true'], mask);
     assert.deepEqual(p.assignmentStates, ['complete', 'complete']);
-    assert.deepEqual(p.inputs.map(input => input.events), [['input', 'change'], ['input', 'change']]);
+    assert.deepEqual(p.inputs.map(input => input.events), [[], ['input', 'change'], [], ['input', 'change']]);
     assert.deepEqual(p.questions.map(question => question.add.clicks), [1, 1]);
     assert.deepEqual(p.questions.map(question => question.selected.children.length), [1, 1]);
     assert.equal(p.background.getAttribute('aria-hidden'), null); assert.equal(p.form.getAttribute('aria-hidden'), null);
@@ -495,11 +932,11 @@ for (const [name, mode, options] of [
   ]);
   assert.deepEqual(p.questions.map(q => q.selected.children[0]?.children[0].textContent), ['TEST-ONLY.pdf', 'SECOND-ONLY.pdf']);
   if (!options.resetInput) {
-    assert.deepEqual(p.inputs.map(i => i.files[0].name), ['TEST-ONLY.pdf', 'SECOND-ONLY.pdf']);
-    assert.deepEqual(await Promise.all(p.inputs.map(i => i.files[0].text())), ['test', 'second']);
+    assert.deepEqual(p.inputs.map(i => i.files[0]?.name), [undefined, 'TEST-ONLY.pdf', undefined, 'SECOND-ONLY.pdf']);
+    assert.deepEqual(await Promise.all(p.inputs.map(i => i.files[0]?.text())), [undefined, 'test', undefined, 'second']);
   }
   assert.deepEqual(p.assignmentStates, ['complete', 'complete']);
-  assert.deepEqual(p.inputs.map(i => i.events), [['input', 'change'], ['input', 'change']]);
+  assert.deepEqual(p.inputs.map(i => i.events), [[], ['input', 'change'], [], ['input', 'change']]);
   assert.deepEqual(p.questions.map(q => q.add.clicks), [1, 1]);
   assert.equal(p.background.getAttribute('aria-hidden'), null);
   assert.equal((await p.call('advance')).code, 'attempted');
@@ -515,9 +952,9 @@ test('file progress: observed sibling dialog and inner mask complete two distinc
     { mask: null, attachments: [0, 0], next: 0 },
     { mask: null, attachments: [1, 0], next: 0 }
   ]);
-  assert.deepEqual(p.inputs.map(input => input.files[0].name), ['TEST-ONLY.pdf', 'SECOND-ONLY.pdf']);
-  assert.deepEqual(await Promise.all(p.inputs.map(input => input.files[0].text())), ['test', 'second']);
-  assert.deepEqual(p.inputs.map(input => input.events), [['input', 'change'], ['input', 'change']]);
+  assert.deepEqual(p.inputs.map(input => input.files[0]?.name), [undefined, 'TEST-ONLY.pdf', undefined, 'SECOND-ONLY.pdf']);
+  assert.deepEqual(await Promise.all(p.inputs.map(input => input.files[0]?.text())), [undefined, 'test', undefined, 'second']);
+  assert.deepEqual(p.inputs.map(input => input.events), [[], ['input', 'change'], [], ['input', 'change']]);
   assert.deepEqual(p.questions.map(q => q.selected.children[0]?.children[0].textContent), ['TEST-ONLY.pdf', 'SECOND-ONLY.pdf']);
   assert.deepEqual(p.assignmentStates, ['complete', 'complete']);
   for (const progress of p.progresses) {
@@ -562,7 +999,8 @@ test('file sequence: preserve the first existing attachment and upload only the 
   assert.deepEqual(Array.from(await p.run(), row => row.code), ['preserved', 'filled']);
   assert.equal(p.selected.children[0], original); assert.equal(p.selected.textContent, 'existing.pdfRemove file');
   assert.deepEqual(p.questions.map(q => q.add.clicks), [0, 1]);
-  assert.equal(p.inputs.length, 1); assert.equal(p.input.files[0].name, 'SECOND-ONLY.pdf');
+  assert.equal(p.inputs.length, 2); assert.deepEqual(p.inputs[0].events, []); assert.equal(p.inputs[0].files.length, 0);
+  assert.equal(p.input.files[0].name, 'SECOND-ONLY.pdf');
   assert.equal(await p.input.files[0].text(), 'second'); assert.deepEqual(p.input.events, ['input', 'change']);
   assert.equal((await p.call('advance')).code, 'attempted'); assert.equal(p.next.clicks, 1); assert.equal(p.submit.clicks, 0);
 });
@@ -625,11 +1063,12 @@ test('file sequence: closure settling rejects hidden, changed or replaced origin
 });
 
 test('file sequence: permanent ARIA mask has a bounded five-second closure wait', async () => {
-  const p = page('success', { mask: 'ancestor', twoFiles: true, keepMask: true });
+  let closedAt;
+  const p = page('success', { mask: 'ancestor', twoFiles: true, keepMask: true, onClose: () => { closedAt = p.elapsed; } });
   const rows = await p.run();
   assert.equal(rows[0].code, 'pending'); assert.equal(rows[0].diagnostic, 'close-grace-expired');
   assert.equal(rows[1].diagnostic, 'previous-unconfirmed');
-  assert.ok(p.elapsed >= 5500 && p.elapsed < 6000, `elapsed=${p.elapsed}`);
+  assert.ok(p.elapsed - closedAt >= 5000 && p.elapsed - closedAt < 5200, `closure wait=${p.elapsed - closedAt}`);
   assert.equal(p.questions[1].add.clicks, 0);
   assert.notEqual((await p.call('advance', { allowIncomplete: true })).code, 'attempted');
 });
