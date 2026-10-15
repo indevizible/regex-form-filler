@@ -18,7 +18,7 @@ The local preview uses the actual extension UI with mock Chrome APIs. Open:
 
 Use synthetic data only. TEST-ONLY.pdf is a tiny synthetic document. Fixtures do not load personal files automatically. Test-only Chrome adapters and localhost support are not included in the extension ZIP.
 
-The 1.6.0 popup preview uses the shipping preset helpers and an isolated synthetic localStorage key. Old preview rules appear as “ค่าเริ่มต้น” until the first mutation. Selection survives reload; preview runs use the selected preset. Next preferences remain global. Reset clears only synthetic rules, presets and preferences, retaining IndexedDB copies as before.
+The 1.6.1 popup preview retains the preset behavior introduced in 1.6.0; 1.6.1 changes only the icons. It uses the shipping preset helpers and an isolated synthetic localStorage key. Old preview rules appear as “ค่าเริ่มต้น” until the first mutation. Selection survives reload; preview runs use the selected preset. Next preferences remain global. Reset clears only synthetic rules, presets and preferences, retaining IndexedDB copies as before.
 
 The parent reported that the Opera local preview preserved legacy rules and TEST-ONLY.pdf, cloned presets, guarded dirty rule edits, changed only copied rules, renamed presets and persisted selection across reload. This does not establish installed-extension behavior.
 
